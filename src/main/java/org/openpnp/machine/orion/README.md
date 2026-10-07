@@ -177,3 +177,15 @@ mvn -DskipTests package
 openpnp.bat
 ```
 Needs a JDK (the project targets Java 11) and Maven.
+
+## Troubleshooting
+
+* **"Cannot load native library ... jSerialComm.dll (Access denied / Can't load ARM 64-bit .dll)"**:
+  jSerialComm unpacks its native DLL into `%TEMP%\jSerialComm\<version>` and `%USERPROFILE%\.jSerialComm`
+  on first use. A stale, locked or wrong-architecture file there stops it from loading. Close every
+  OpenPnP / Java process (also hidden ones in Task Manager), delete those two folders, start again.
+  The Bus Manager still opens without the library and shows this hint; the simulated interface
+  never needs it. If it persists, check `java -XshowSettings:properties -version` for `os.arch`
+  (it must match your Windows, normally `amd64`).
+* The `Unsafe`, `CoInitializeEx` and "restricted method" warnings at start-up come from OpenPnP's
+  own libraries and are harmless.

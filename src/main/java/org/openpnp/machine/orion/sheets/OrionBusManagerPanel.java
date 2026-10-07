@@ -82,6 +82,12 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         OrionUi.row(p, 0, "Interface", mode);
 
         JComboBox<String> adapter = portCombo(s.getAdapterPort(), s::setAdapterPort);
+        String libProblem = JSerialCommChannel.getLibraryProblem();
+        if (libProblem != null) {
+            JLabel warn = new JLabel("<html><body style='width:700px;color:#b00000'>" + libProblem
+                    + "</body></html>");
+            OrionUi.row(p, 10, "Serial library", warn);
+        }
         OrionUi.row(p, 1, "USB-RS485 adapter port (9600 8N1)", adapter);
         JComboBox<String> host = portCombo(s.getHostPort(), s::setHostPort);
         OrionUi.row(p, 2, "Host board port (115200)", host);

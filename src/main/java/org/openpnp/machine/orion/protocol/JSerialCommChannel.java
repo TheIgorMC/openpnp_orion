@@ -13,13 +13,40 @@ public class JSerialCommChannel implements SerialChannel {
         this.baud = baud;
     }
 
+    private static volatile String libraryProblem;
+
+    /** Human readable reason why the native serial library could not be loaded, or null if it works. */
+    public static String getLibraryProblem() {
+        return libraryProblem;
+    }
+
+    /**
+     * Wraps a failed native library load into a message with what is needed to diagnose it. The
+     * jSerialComm native library is extracted to the temp folder on first use; a stale or locked file
+     * there (or a wrong architecture) makes it fail with UnsatisfiedLinkError.
+     */
+    private static String describeLibraryFailure(Throwable t) {
+        return String.format("The serial port library (jSerialComm) could not be loaded: %s. "
+                + "os.arch=%s, java=%s %s. Fix: close every OpenPnP/Java process, delete the folders "
+                + "%%TEMP%%\\jSerialComm and %%USERPROFILE%%\\.jSerialComm, start again. The simulated "
+                + "interface does not need it.", String.valueOf(t.getMessage()).split("\n")[0],
+                System.getProperty("os.arch"), System.getProperty("java.vm.name"),
+                System.getProperty("java.version"));
+    }
+
     public static String[] listPorts() {
-        SerialPort[] ports = SerialPort.getCommPorts();
-        String[] names = new String[ports.length];
-        for (int i = 0; i < ports.length; i++) {
-            names[i] = ports[i].getSystemPortName();
+        try {
+            SerialPort[] ports = SerialPort.getCommPorts();
+            libraryProblem = null;
+            String[] names = new String[ports.length];
+            for (int i = 0; i < ports.length; i++) {
+                names[i] = ports[i].getSystemPortName();
+            }
+            return names;
+        } catch (Throwable t) { // UnsatisfiedLinkError / NoClassDefFoundError / ExceptionInInitializerError
+            libraryProblem = describeLibraryFailure(t);
+            return new String[0];
         }
-        return names;
     }
 
     @Override
@@ -30,7 +57,13 @@ public class JSerialCommChannel implements SerialChannel {
         if (portName == null || portName.isEmpty()) {
             throw new OrionException(OrionException.Kind.TRANSPORT, "No serial port configured");
         }
-        SerialPort p = SerialPort.getCommPort(portName);
+        SerialPort p;
+        try {
+            p = SerialPort.getCommPort(portName);
+        } catch (Throwable t) {
+            libraryProblem = describeLibraryFailure(t);
+            throw new OrionException(OrionException.Kind.TRANSPORT, libraryProblem);
+        }
         p.setComPortParameters(baud, 8, SerialPort.ONE_STOP_BIT, SerialPort.NO_PARITY);
         p.setFlowControl(SerialPort.FLOW_CONTROL_DISABLED);
         p.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 20, 0);
