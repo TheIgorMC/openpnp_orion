@@ -549,6 +549,62 @@ public class OrionManager {
         }
     }
 
+    /**
+     * Create one OrionFeeder per live unit of the rail that has no feeder yet, in slot-X order, named
+     * "Orion R1-01" ... The user then assigns a part to each. Returns the new feeders.
+     */
+    public List<OrionFeeder> createFeedersForUnbound(int rail) throws Exception {
+        OrionBus bus = getBus(rail);
+        if (bus == null) {
+            throw new OrionException(OrionException.Kind.TRANSPORT, "Rail " + (rail + 1) + " is not connected");
+        }
+        java.util.Set<String> bound = new java.util.HashSet<>();
+        for (Feeder f : Configuration.get().getMachine().getFeeders()) {
+            if (f instanceof OrionFeeder && ((OrionFeeder) f).getSerial() != null) {
+                bound.add(((OrionFeeder) f).getSerial().toUpperCase());
+            }
+        }
+        List<OrionDeviceInfo> units = new ArrayList<>();
+        for (OrionDeviceInfo d : bus.getDevices()) {
+            if (d.state != OrionDeviceInfo.State.LOST && d.serial != null
+                    && !d.serial.startsWith("NONCE-") && !bound.contains(d.serial.toUpperCase())) {
+                units.add(d);
+            }
+        }
+        units.sort((a, b) -> Double.compare(Double.isNaN(a.slotXMm) ? Double.MAX_VALUE : a.slotXMm,
+                Double.isNaN(b.slotXMm) ? Double.MAX_VALUE : b.slotXMm));
+        List<OrionFeeder> created = new ArrayList<>();
+        for (OrionDeviceInfo d : units) {
+            OrionFeeder f = new OrionFeeder();
+            f.setName(uniqueName(String.format("Orion R%d-%s", rail + 1, d.serial.substring(0, 4))));
+            f.setSerial(d.serial);
+            f.setRail(rail);
+            if (!Double.isNaN(d.slotXMm)) {
+                f.setTaughtSlotXMm(d.slotXMm);
+            }
+            Configuration.get().getMachine().addFeeder(f);
+            created.add(f);
+        }
+        addLog(rail, OrionBusListener.Direction.INFO, "Created " + created.size() + " feeder(s)");
+        refresh();
+        return created;
+    }
+
+    private static String uniqueName(String base) {
+        String name = base;
+        int n = 2;
+        while (true) {
+            boolean taken = false;
+            for (Feeder f : Configuration.get().getMachine().getFeeders()) {
+                taken |= name.equals(f.getName());
+            }
+            if (!taken) {
+                return name;
+            }
+            name = base + "-" + n++;
+        }
+    }
+
     // ------------------------------------------------------------------ vision verify / rescan
 
     /**

@@ -242,4 +242,22 @@ public class OrionFeederTest {
         assertEquals(12.5, back.getRailSettings(0).getFiberOffsetX());
         assertEquals(4, back.getFiberPipeline().getStages().size());
     }
+
+    @Test
+    void oneFeederObjectPerUnitAndNoDuplicatesOnSecondRun() throws Exception {
+        mgr.connect();
+        for (int i = 0; i < 6; i++) {
+            sim().getFeeders().get(i).posRaw = (6 - i) * 100; // slot X 60,50,...,10 mm
+        }
+        mgr.getBus(0).scan(null);
+        java.util.List<OrionFeeder> made = mgr.createFeedersForUnbound(0);
+        assertEquals(3, made.size()); // 6 sim units are spread over 2 rails
+        assertTrue(made.get(0).getTaughtSlotXMm() < made.get(2).getTaughtSlotXMm(), "slot X order");
+        assertEquals(3, machine.getFeeders().stream().filter(f -> f instanceof OrionFeeder).count());
+        assertEquals(0, mgr.createFeedersForUnbound(0).size(), "already bound units are skipped");
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (org.openpnp.spi.Feeder f : machine.getFeeders()) {
+            assertTrue(names.add(f.getName()), "unique name " + f.getName());
+        }
+    }
 }

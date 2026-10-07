@@ -24,6 +24,15 @@ Add a feeder of type **OrionFeeder**. Every Orion feeder shows three tabs:
 With the *Connect and scan automatically when the machine is enabled* option (default on) the
 bus connects and scans when the machine is enabled. Otherwise it connects on first use.
 
+## One object per feeder
+
+Like every OpenPnP feeder, each physical Orion feeder is its own `OrionFeeder` object in the machine's
+feeder list, bound to its unit by serial number (own part, pick location, pitch, peel settings).
+Bootstrap: add one OrionFeeder by hand (it stays unbound) to reach the machine-wide Bus Manager tab,
+connect and scan, then **Create feeders for all unbound** makes one feeder per unit that has none
+(ordered by slot X, never duplicating a bound unit), and you assign a part to each. The first
+hand-made placeholder can be bound to a unit with *Bind to unit...* or deleted.
+
 ## Interfaces
 
 | Mode | Hardware | Rails |

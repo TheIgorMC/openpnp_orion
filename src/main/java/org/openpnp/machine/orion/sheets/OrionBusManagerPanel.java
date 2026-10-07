@@ -558,6 +558,10 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             q.add(feederAction("Unfeed", f -> f.unfeedOnce()));
             q.add(feederAction("Peel", f -> f.peel(false)));
             q.add(feederAction("Unpeel", f -> f.peel(true)));
+            q.add(btn("Create feeders for all unbound", "One OpenPnP feeder per unit that has none yet, "
+                    + "ordered by slot X", () -> OrionUi.run("Create feeders", () -> mgr.createFeedersForUnbound(rail),
+                            made -> JOptionPane.showMessageDialog(this, made.size() + " feeder(s) created. "
+                                    + "Assign a part to each in the Feeders tab."))));
             q.add(btn("Create feeder", "Add an OrionFeeder for the selected unbound unit", this::createFeeder));
             q.add(btn("Forget", "Drop the selected unit from the table", () -> {
                 Row r = selected();
