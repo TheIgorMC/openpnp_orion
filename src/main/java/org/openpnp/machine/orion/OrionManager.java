@@ -15,7 +15,12 @@ import org.openpnp.machine.orion.protocol.OrionException;
 import org.openpnp.machine.orion.protocol.OrionTransport;
 import org.openpnp.machine.orion.protocol.SerialRs485Transport;
 import org.openpnp.machine.orion.protocol.SimulatedOrionTransport;
+import org.openpnp.machine.orion.vision.OrionRailScanner;
+import org.openpnp.machine.orion.vision.OrionVisionFinder;
 import org.openpnp.model.Configuration;
+import org.openpnp.model.Location;
+import org.openpnp.model.Part;
+import org.openpnp.spi.Feeder;
 import org.openpnp.spi.Machine;
 import org.pmw.tinylog.Logger;
 
@@ -323,5 +328,94 @@ public class OrionManager {
         }
         fireChanged();
         return locate(serial, railHint);
+    }
+
+    // ------------------------------------------------------------------ vision verify / rescan
+
+    /**
+     * Check every feeder of a rail by its large fiducial (small shifts are saved as the new X); if
+     * any is missing, do ONE sweep of the free parts of the rail after all feeders were checked.
+     * Must run as a machine task (moves the camera).
+     */
+    public OrionRailScanner.Result verifyRail(int rail, OrionRailScanner.Progress progress)
+            throws Exception {
+        OrionSettings settings = getSettings();
+        OrionRailSettings rs = settings.getRailSettings(rail);
+        if (!rs.isConfigured()) {
+            throw new Exception("Rail " + (rail + 1) + " has no X range set. Fill in the vision scan "
+                    + "settings of the rail first.");
+        }
+        Part part = Configuration.get().getPart(settings.getLargeFiducialPartId());
+        if (part == null) {
+            throw new Exception("Choose the large fiducial part in the Bus Manager vision settings first.");
+        }
+        OrionBus bus = getBus(rail);
+        if (bus == null) {
+            throw new OrionException(OrionException.Kind.TRANSPORT, "Rail " + (rail + 1) + " is not connected");
+        }
+        // Refresh who is on the bus, so unit presence and slot positions are current.
+        bus.scan(null);
+
+        List<OrionRailScanner.Target> targets = new ArrayList<>();
+        for (Feeder f : Configuration.get().getMachine().getFeeders()) {
+            if (!(f instanceof OrionFeeder)) {
+                continue;
+            }
+            final OrionFeeder of = (OrionFeeder) f;
+            if (of.getSerial() == null || of.getRail() != rail) {
+                continue;
+            }
+            OrionDeviceInfo d = bus.findBySerial(of.getSerial());
+            double slotShift = Double.NaN;
+            if (d != null && !Double.isNaN(d.slotXMm) && !Double.isNaN(of.getTaughtSlotXMm())) {
+                slotShift = d.slotXMm - of.getTaughtSlotXMm();
+            }
+            final OrionDeviceInfo dd = d;
+            targets.add(new OrionRailScanner.Target(of.getName(), of.getFiducialNominalOrDefault(rs),
+                    d != null && d.state != OrionDeviceInfo.State.LOST, slotShift, found -> {
+                        if (dd != null) {
+                            of.setCurrentSlotXMm(dd.slotXMm);
+                        }
+                        of.applyFoundFiducial(found, rs);
+                    }));
+        }
+        OrionRailScanner.Params p = new OrionRailScanner.Params();
+        p.xMin = rs.getXMin();
+        p.xMax = rs.getXMax();
+        p.fiducialY = rs.getFiducialY();
+        p.fiducialZ = rs.getFiducialZ();
+        p.scanStepMm = rs.getScanStepMm();
+        p.exclusionMm = rs.getExclusionMm();
+        p.minSaveMm = rs.getMinSaveMm();
+        p.maxShiftMm = rs.getMaxShiftMm();
+        p.autoRescan = rs.isAutoRescan();
+        OrionRailScanner.Result r = new OrionRailScanner(p, new OrionVisionFinder(part), progress)
+                .run(targets);
+        for (String line : r.log) {
+            addLog(rail, OrionBusListener.Direction.INFO, "vision: " + line);
+        }
+        addLog(rail, OrionBusListener.Direction.INFO, "vision verify: " + r.summary());
+        refresh();
+        return r;
+    }
+
+    /** Manual association: the camera is over the feeder's large fiducial; measure and save it. */
+    public Location locateHere(OrionFeeder feeder) throws Exception {
+        OrionSettings settings = getSettings();
+        Part part = Configuration.get().getPart(settings.getLargeFiducialPartId());
+        if (part == null) {
+            throw new Exception("Choose the large fiducial part in the Bus Manager vision settings first.");
+        }
+        OrionRailSettings rs = settings.getRailSettings(feeder.getRail());
+        Location cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera().getLocation();
+        Location found = new OrionVisionFinder(part).find(cam);
+        if (found == null) {
+            throw new Exception("No large fiducial found under the camera.");
+        }
+        feeder.applyFoundFiducial(found, rs);
+        addLog(feeder.getRail(), OrionBusListener.Direction.INFO, String.format(
+                "vision: %s located manually at X=%.2f", feeder.getName(), found.getX()));
+        refresh();
+        return found;
     }
 }

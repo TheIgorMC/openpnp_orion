@@ -1,6 +1,10 @@
 package org.openpnp.machine.orion;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.simpleframework.xml.Attribute;
+import org.simpleframework.xml.ElementList;
 import org.simpleframework.xml.Root;
 
 /** Machine-wide Orion bus settings, stored as a machine property (machine.xml). */
@@ -46,6 +50,32 @@ public class OrionSettings {
 
     @Attribute(required = false)
     private boolean connectOnEnable = true;
+
+    /** The large fiducial (middle one of each feeder's set) used to find feeders on the rail. */
+    @Attribute(required = false)
+    private String largeFiducialPartId = "";
+
+    @ElementList(required = false)
+    private List<OrionRailSettings> railSettings = new ArrayList<>();
+
+    public String getLargeFiducialPartId() {
+        return largeFiducialPartId;
+    }
+
+    public void setLargeFiducialPartId(String id) {
+        this.largeFiducialPartId = id == null ? "" : id;
+    }
+
+    public synchronized OrionRailSettings getRailSettings(int rail) {
+        for (OrionRailSettings r : railSettings) {
+            if (r.getIndex() == rail) {
+                return r;
+            }
+        }
+        OrionRailSettings r = new OrionRailSettings(rail);
+        railSettings.add(r);
+        return r;
+    }
 
     public Mode getMode() {
         return mode;

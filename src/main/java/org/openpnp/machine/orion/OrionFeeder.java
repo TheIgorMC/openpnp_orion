@@ -398,6 +398,10 @@ public class OrionFeeder extends ReferenceFeeder {
         this.followSlotPosition = v;
     }
 
+    public void setCurrentSlotXMm(double v) {
+        currentSlotXMm = v;
+    }
+
     public double getCurrentSlotXMm() {
         return currentSlotXMm;
     }
@@ -512,6 +516,35 @@ public class OrionFeeder extends ReferenceFeeder {
         visionDelta = new Location(LengthUnit.Millimeters, dx, dy, 0, 0);
         Logger.info("Orion feeder {}: fiducial correction dx={} dy={}", getName(), dx, dy);
         return visionDelta;
+    }
+
+    /** Rail-scan nominal for this feeder's large fiducial: taught position, else the pick X on the rail line. */
+    public Location getFiducialNominalOrDefault(OrionRailSettings rail) {
+        if (fiducialNominal != null) {
+            return fiducialNominal;
+        }
+        return new Location(LengthUnit.Millimeters, location.convertToUnits(LengthUnit.Millimeters).getX(),
+                rail.getFiducialY(), rail.getFiducialZ(), 0);
+    }
+
+    /**
+     * Save a measured large-fiducial position: the pick X moves by the same amount the fiducial moved,
+     * and the fiducial becomes the new nominal. First time (no nominal yet) only the nominal is set.
+     */
+    public synchronized void applyFoundFiducial(Location found, OrionRailSettings rail) {
+        Location f = found.convertToUnits(LengthUnit.Millimeters);
+        Location old = getFiducialNominalOrDefault(rail);
+        if (fiducialNominal != null) {
+            double dx = f.getX() - old.getX();
+            setLocation(location.add(new Location(LengthUnit.Millimeters, dx, 0, 0, 0)));
+        }
+        fiducialNominal = new Location(LengthUnit.Millimeters, f.getX(), old.getY(), old.getZ(), 0);
+        visionDelta = null;
+        // Remember where the unit reports it sits now, so the next move can be predicted.
+        if (!Double.isNaN(currentSlotXMm)) {
+            taughtSlotXMm = currentSlotXMm;
+        }
+        firePropertyChange("fiducialNominal", old, fiducialNominal);
     }
 
     /** Make the current vision correction permanent: move the taught pick X and fiducial position. */

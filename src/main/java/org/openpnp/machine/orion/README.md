@@ -77,6 +77,29 @@ check, not an identity: binding stays on the serial.
 * After a power cycle units announce their last address; a scan gives each its old address back when
   that is unambiguous (no two units claim it, and it is free), otherwise it assigns a fresh one.
 
+## Rail verify and rescan by vision (large fiducial)
+
+Per rail you give the X range, the Y/Z of the large (middle) fiducials, step (6 mm), exclusion
+(5 mm) and the shift limits; the large fiducial part is chosen once in the connection panel
+(its vision settings are the detection). **Verify rail (vision)**:
+
+1. Refresh the bus table (who answers, slot positions).
+2. Check every feeder of the rail, one after the other, at its last known fiducial X. A shift between
+   "save shifts >" and "reject >" is saved: the pick X and the fiducial move by the same amount.
+   Nothing is saved for shifts below the noise limit.
+3. Only after ALL feeders are checked, if any is missing, ONE rescan: sweep the free stretches of the
+   rail (outside +-exclusion of the feeders that were found) in steps, collecting large fiducials.
+4. Association is automatic only when unambiguous: the unit's slot position moved (the fiducial must
+   be near the shifted X), or exactly one missing feeder and one unclaimed fiducial remain. Otherwise
+   the feeder is reported UNRESOLVED and nothing is guessed: jog the camera over its fiducial and use
+   **Locate selected here** (manual). Missing feeders whose unit does not answer stay missing.
+   Fiducials nobody claims are reported (new, unbound feeders).
+
+With "Rescan automatically" off, step 3 is skipped and the result just says a rescan is needed.
+Not implemented: finding which unit is which by lighting the fibers in a binary search.
+Verify moves the camera, so it only runs on a homed machine, as a machine task; it is a button
+for now, not yet run automatically before a job.
+
 ## Vision (fine X position)
 
 A fiducial part on or beside the feeder marks its real position. Set the fiducial part (its

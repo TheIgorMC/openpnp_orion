@@ -100,6 +100,15 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         auto.addActionListener(e -> s.setConnectOnEnable(auto.isSelected()));
         OrionUi.row(p, 5, "", auto);
 
+        JComboBox<org.openpnp.model.Part> fid = new JComboBox<>(new org.openpnp.gui.support.PartsComboBoxModel());
+        fid.setRenderer(new org.openpnp.gui.support.IdentifiableListCellRenderer<org.openpnp.model.Part>());
+        fid.setSelectedItem(Configuration.get().getPart(s.getLargeFiducialPartId()));
+        fid.addActionListener(e -> {
+            org.openpnp.model.Part part = (org.openpnp.model.Part) fid.getSelectedItem();
+            s.setLargeFiducialPartId(part == null ? "" : part.getId());
+        });
+        OrionUi.row(p, 6, "Large fiducial part (feeder finder)", fid);
+
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
         JButton connect = new JButton("Connect");
         connect.addActionListener(e -> OrionUi.run("Connect", () -> mgr.connect()));
@@ -110,7 +119,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         buttons.add(connect);
         buttons.add(disconnect);
         buttons.add(scanAll);
-        OrionUi.row(p, 6, "", buttons);
+        OrionUi.row(p, 7, "", buttons);
         return p;
     }
 
@@ -275,13 +284,92 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                     return comp;
                 }
             });
-            add(summary, BorderLayout.NORTH);
+            JPanel north = new JPanel(new BorderLayout());
+            north.add(summary, BorderLayout.NORTH);
+            north.add(visionSettings(), BorderLayout.CENTER);
+            add(north, BorderLayout.NORTH);
             add(new JScrollPane(table), BorderLayout.CENTER);
             add(buttons(), BorderLayout.SOUTH);
         }
 
+        private javax.swing.JSpinner dspin(double v, double min, double max, double step,
+                java.util.function.DoubleConsumer set) {
+            javax.swing.JSpinner sp = new javax.swing.JSpinner(new SpinnerNumberModel(v, min, max, step));
+            sp.setPreferredSize(new java.awt.Dimension(80, sp.getPreferredSize().height));
+            sp.addChangeListener(e -> set.accept(((Number) sp.getValue()).doubleValue()));
+            return sp;
+        }
+
+        private JPanel visionSettings() {
+            org.openpnp.machine.orion.OrionRailSettings rs = mgr.getSettings().getRailSettings(rail);
+            JPanel p = new JPanel(new java.awt.GridLayout(2, 1));
+            p.setBorder(BorderFactory.createTitledBorder(
+                    "Vision scan of this rail (large fiducials; machine coordinates, mm)"));
+            JPanel row1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
+            JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
+            p.add(row1);
+            p.add(row2);
+            row1.add(new JLabel("X from"));
+            row1.add(dspin(rs.getXMin(), -5000, 5000, 1, rs::setXMin));
+            row1.add(new JLabel("to"));
+            row1.add(dspin(rs.getXMax(), -5000, 5000, 1, rs::setXMax));
+            row1.add(new JLabel("fiducial Y"));
+            row1.add(dspin(rs.getFiducialY(), -5000, 5000, 0.1, rs::setFiducialY));
+            row1.add(new JLabel("Z"));
+            row1.add(dspin(rs.getFiducialZ(), -500, 500, 0.1, rs::setFiducialZ));
+            row2.add(new JLabel("step"));
+            row2.add(dspin(rs.getScanStepMm(), 1, 50, 0.5, rs::setScanStepMm));
+            row2.add(new JLabel("exclusion"));
+            row2.add(dspin(rs.getExclusionMm(), 1, 50, 0.5, rs::setExclusionMm));
+            row2.add(new JLabel("save shifts >"));
+            row2.add(dspin(rs.getMinSaveMm(), 0, 5, 0.01, rs::setMinSaveMm));
+            row2.add(new JLabel("reject >"));
+            row2.add(dspin(rs.getMaxShiftMm(), 0.1, 50, 0.1, rs::setMaxShiftMm));
+            JCheckBox auto = new JCheckBox("Rescan automatically when a feeder is missing", rs.isAutoRescan());
+            auto.addActionListener(e -> rs.setAutoRescan(auto.isSelected()));
+            row2.add(auto);
+            return p;
+        }
+
+        private void verifyRail() {
+            OrionUi.run("Verify rail", () -> mgr.verifyRail(rail, (text, done, total) -> OrionUi.onEdt(() -> {
+                progress.setVisible(true);
+                progress.setMaximum(Math.max(1, total));
+                progress.setValue(done);
+                progress.setString("Rail " + (rail + 1) + ": " + text);
+            })), result -> {
+                progress.setVisible(false);
+                StringBuilder sb = new StringBuilder(result.summary()).append("\n\n");
+                for (String l : result.log) {
+                    sb.append(l).append('\n');
+                }
+                if (result.rescanNeeded && !result.rescanRan) {
+                    sb.append("\nSome feeders are missing. Use \"Locate selected here\" (manual) or enable "
+                            + "automatic rescan.");
+                }
+                if (!result.in(org.openpnp.machine.orion.vision.OrionRailScanner.State.UNRESOLVED).isEmpty()) {
+                    sb.append("\nUnresolved feeders: move the camera over each one's large fiducial and "
+                            + "use \"Locate selected here\".");
+                }
+                JOptionPane.showMessageDialog(MainFrame.get(), sb.toString(),
+                        "Rail " + (rail + 1) + " vision verify", JOptionPane.INFORMATION_MESSAGE);
+                mgr.refresh();
+            });
+        }
+
         private JPanel buttons() {
             JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT));
+            p.add(btn("Verify rail (vision)", "Check each feeder's large fiducial, save small X shifts, "
+                    + "one rescan if something is missing", this::verifyRail));
+            p.add(btn("Locate selected here", "Camera is over the selected feeder's large fiducial: "
+                    + "measure and save its X", () -> {
+                        Row r = selected();
+                        if (r == null || r.feeder == null) {
+                            JOptionPane.showMessageDialog(this, "Select a row that has a feeder.");
+                            return;
+                        }
+                        OrionUi.run("Locate here", () -> mgr.locateHere(r.feeder));
+                    }));
             p.add(btn("Scan rail", "Probe every address, then discover and address new units", () -> scan(rail)));
             p.add(btn("Ping", "Ping the selected unit", () -> {
                 Row r = selected();
@@ -295,13 +383,14 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                     });
                 }
             }));
-            p.add(feederAction("Identify", f -> f.identify()));
-            p.add(feederAction("Feed", f -> f.feedOnce()));
-            p.add(feederAction("Unfeed", f -> f.unfeedOnce()));
-            p.add(feederAction("Peel", f -> f.peel(false)));
-            p.add(feederAction("Unpeel", f -> f.peel(true)));
-            p.add(btn("Create feeder", "Add an OrionFeeder for the selected unbound unit", this::createFeeder));
-            p.add(btn("Forget", "Drop the selected unit from the table", () -> {
+            JPanel q = new JPanel(new FlowLayout(FlowLayout.LEFT));
+            q.add(feederAction("Identify", f -> f.identify()));
+            q.add(feederAction("Feed", f -> f.feedOnce()));
+            q.add(feederAction("Unfeed", f -> f.unfeedOnce()));
+            q.add(feederAction("Peel", f -> f.peel(false)));
+            q.add(feederAction("Unpeel", f -> f.peel(true)));
+            q.add(btn("Create feeder", "Add an OrionFeeder for the selected unbound unit", this::createFeeder));
+            q.add(btn("Forget", "Drop the selected unit from the table", () -> {
                 Row r = selected();
                 if (r != null && r.info != null) {
                     mgr.getBus(rail).forgetAddress(r.info.address);
@@ -310,8 +399,11 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             }));
             JButton power = new JButton("Rail power...");
             power.addActionListener(e -> railPower());
-            p.add(power);
-            return p;
+            q.add(power);
+            JPanel both = new JPanel(new java.awt.GridLayout(2, 1));
+            both.add(p);
+            both.add(q);
+            return both;
         }
 
         private JButton btn(String text, String tip, Runnable r) {

@@ -159,4 +159,39 @@ public class OrionFeederTest {
         assertEquals(106.5, f.getPickLocation().getX(), 1e-9);
         assertEquals(265, s.posRaw);
     }
+
+    @Test
+    void foundFiducialMovesPickXAndNominalByTheSameAmount() throws Exception {
+        OrionFeeder f = bound(0);
+        OrionRailSettings rs = mgr.getSettings().getRailSettings(0);
+        rs.setFiducialY(20);
+        rs.setFiducialZ(-5);
+        org.openpnp.model.LengthUnit mm = org.openpnp.model.LengthUnit.Millimeters;
+        f.setLocation(new org.openpnp.model.Location(mm, 100, 50, 0, 0));
+        // first sighting: no nominal yet, only the nominal is recorded
+        f.applyFoundFiducial(new org.openpnp.model.Location(mm, 95, 20, -5, 0), rs);
+        assertEquals(100.0, f.getLocation().getX(), 1e-9);
+        assertEquals(95.0, f.getFiducialNominal().getX(), 1e-9);
+        // later it is seen 0.3 mm further along
+        f.applyFoundFiducial(new org.openpnp.model.Location(mm, 95.3, 20, -5, 0), rs);
+        assertEquals(100.3, f.getLocation().getX(), 1e-9);
+        assertEquals(95.3, f.getFiducialNominal().getX(), 1e-9);
+        assertEquals(50.0, f.getLocation().getY(), 1e-9);
+    }
+
+    @Test
+    void railSettingsSurviveSaveAndReload() throws Exception {
+        OrionRailSettings rs = mgr.getSettings().getRailSettings(1);
+        rs.setXMin(10);
+        rs.setXMax(400);
+        rs.setScanStepMm(5);
+        mgr.getSettings().setLargeFiducialPartId("FID-L");
+        Configuration.get().save();
+        Configuration.initialize(dir);
+        Configuration.get().load();
+        OrionRailSettings back = mgr.getSettings().getRailSettings(1);
+        assertEquals(400.0, back.getXMax());
+        assertEquals(5.0, back.getScanStepMm());
+        assertEquals("FID-L", mgr.getSettings().getLargeFiducialPartId());
+    }
 }
