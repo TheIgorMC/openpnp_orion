@@ -125,8 +125,8 @@ public final class OrionIdentifier {
     // ------------------------------------------------------------------ tape movement (fallback)
 
     public interface Mover<T> {
-        /** Move the tape of all given units a little backwards (back=true) or forwards again. */
-        void move(Collection<T> units, boolean back) throws Exception;
+        /** Move the tape of ONE unit a little backwards (back=true) or forwards again. */
+        void move(T unit, boolean back) throws Exception;
     }
 
     public interface FrameSource {
@@ -139,19 +139,25 @@ public final class OrionIdentifier {
     /**
      * Tape movement: take a picture of the masked sprocket hole, move the active units back a bit,
      * take another, compare, move forward again. Slower than the light, since the tapes really move.
+     * <p>
+     * Moves are <b>staggered</b>: one unit at a time, {@code staggerMs} apart, never all together, so
+     * the motors of many feeders do not start at the same instant and overload the 12 V rail.
      */
     public static class MovementProbe<T> implements Probe<T> {
         private final Mover<T> mover;
         private final FrameSource frames;
         private final double threshold;
         private final long settleMs;
-        private List<T> moved = new ArrayList<>();
+        private final long staggerMs;
+        private final List<T> movedBack = new ArrayList<>();
 
-        public MovementProbe(Mover<T> mover, FrameSource frames, double threshold, long settleMs) {
+        public MovementProbe(Mover<T> mover, FrameSource frames, double threshold, long settleMs,
+                long staggerMs) {
             this.mover = mover;
             this.frames = frames;
             this.threshold = threshold;
             this.settleMs = settleMs;
+            this.staggerMs = staggerMs;
         }
 
         @Override
@@ -162,22 +168,52 @@ public final class OrionIdentifier {
         @Override
         public boolean test(List<T> active) throws Exception {
             Object before = frames.snap();
-            moved = new ArrayList<>(active);
-            mover.move(moved, true);
-            if (settleMs > 0) {
-                Thread.sleep(settleMs);
+            Object after;
+            try {
+                for (T u : active) {
+                    stagger();
+                    movedBack.add(u); // recorded first: if the move fails halfway, restore() undoes it
+                    mover.move(u, true);
+                    lastMoveMs = System.nanoTime() / 1_000_000;
+                }
+                if (settleMs > 0) {
+                    Thread.sleep(settleMs);
+                }
+                after = frames.snap();
+            } finally {
+                restore(); // tapes always go forward again, also after an error
             }
-            Object after = frames.snap();
-            mover.move(moved, false);
-            moved = new ArrayList<>();
             return frames.difference(before, after) >= threshold;
         }
 
+        private long lastMoveMs = Long.MIN_VALUE / 2;
+
+        /** Wait until at least staggerMs passed since the previous move command of this probe. */
+        private void stagger() throws InterruptedException {
+            long wait = staggerMs - (System.nanoTime() / 1_000_000 - lastMoveMs);
+            if (staggerMs > 0 && wait > 0) {
+                Thread.sleep(wait);
+            }
+        }
+
+        /** Move every unit that was moved back forward again, staggered; keeps going if one fails. */
         @Override
         public void restore() throws Exception {
-            if (!moved.isEmpty()) { // interrupted between back and forward
-                mover.move(moved, false);
-                moved = new ArrayList<>();
+            Exception first = null;
+            for (T u : new ArrayList<>(movedBack)) {
+                try {
+                    stagger();
+                    mover.move(u, false);
+                } catch (Exception e) {
+                    if (first == null) {
+                        first = e;
+                    }
+                }
+                lastMoveMs = System.nanoTime() / 1_000_000;
+            }
+            movedBack.clear();
+            if (first != null) {
+                throw first;
             }
         }
     }

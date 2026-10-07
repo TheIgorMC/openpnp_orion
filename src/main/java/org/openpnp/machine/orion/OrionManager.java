@@ -491,11 +491,8 @@ public class OrionManager {
     private OrionIdentifier.Probe<OrionRailScanner.Target> movementProbe(Camera cam) {
         final OrionSettings st = getSettings();
         final int tenths = Math.max(1, (int) Math.round(st.getMovementMm() * 10));
-        OrionIdentifier.Mover<OrionRailScanner.Target> mover = (units, back) -> {
-            for (OrionRailScanner.Target t : units) {
+        OrionIdentifier.Mover<OrionRailScanner.Target> mover = (t, back) ->
                 feederOf(t).jogTenthsMm(back ? -tenths : tenths);
-            }
-        };
         OrionIdentifier.FrameSource frames = new OrionIdentifier.FrameSource() {
             public Object snap() throws Exception {
                 return OrionPipelines.grab(st.getMovementPipeline(), cam);
@@ -509,7 +506,7 @@ public class OrionManager {
             }
         };
         return new OrionIdentifier.MovementProbe<>(mover, frames, st.getMovementThreshold(),
-                st.getSettleMs());
+                st.getSettleMs(), st.getStaggerMs());
     }
 
     /** Tuning helper: measure the fiber spot with the unit's fiber off and on. Camera must already be over the spot. */

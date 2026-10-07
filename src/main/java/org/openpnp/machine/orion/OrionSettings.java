@@ -117,6 +117,10 @@ public class OrionSettings {
     @Attribute(required = false)
     private int settleMs = 150;
 
+    /** Pause between moving one feeder and the next, so motors never start together (supply load). */
+    @Attribute(required = false)
+    private int staggerMs = 150;
+
     @Element(required = false)
     private CvPipeline fiberPipeline;
 
@@ -161,6 +165,14 @@ public class OrionSettings {
 
     public void setMovementMm(double v) {
         movementMm = v;
+    }
+
+    public int getStaggerMs() {
+        return staggerMs;
+    }
+
+    public void setStaggerMs(int v) {
+        staggerMs = v;
     }
 
     public int getSettleMs() {

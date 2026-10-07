@@ -161,6 +161,8 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         tape.add(spinner(s.getMovementThreshold(), 1, 100000, 10, s::setMovementThreshold));
         tape.add(new JLabel("moved back (mm)"));
         tape.add(spinner(s.getMovementMm(), 0.1, 5, 0.1, s::setMovementMm));
+        tape.add(new JLabel("stagger (ms between feeders)"));
+        tape.add(spinner(s.getStaggerMs(), 0, 5000, 50, v -> s.setStaggerMs((int) v)));
         OrionUi.row(p, 2, "Tape movement (fallback)", tape);
 
         JPanel pipes = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));

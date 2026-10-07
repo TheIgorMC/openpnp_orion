@@ -119,7 +119,10 @@ decide" instead of a guess. 8 candidates take 5 lit/unlit comparisons.
 Method (Feeder identification tab): *Off*, *Fiber light*, *Tape movement*, or *Fiber light, tape
 movement as fallback*. The fallback goes to the sprocket-hole offset, takes a picture of the masked
 hole, moves the candidates' tapes back (default 0.5 mm, `CMD_JOG`), takes another and counts changed
-pixels, then moves forward again; same binary search, slower because tapes really move.
+pixels, then moves forward again; same binary search, slower because tapes really move. Moves are staggered: one unit at a time, at
+least *stagger* ms (default 150) between any two move commands, also when moving forward again, so
+feeder motors never start together and load the 12 V rail. If a move fails halfway, every tape that
+was moved back is still sent forward again.
 
 Tuning (same tab): two normal OpenPnP pipelines, *fiber* and *tape movement*, edited with the
 pipeline editor. Both end in a gray image of a masked spot (circle mask stage `FiberSpot` /

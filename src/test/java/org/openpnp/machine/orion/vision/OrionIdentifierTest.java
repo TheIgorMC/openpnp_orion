@@ -76,13 +76,11 @@ public class OrionIdentifierTest {
 
     @Test
     void tapeMovementFallbackFindsSubjectAndRestoresTapes() throws Exception {
-        OrionIdentifier.Mover<String> mover = (us, back) -> {
-            for (String u : us) {
-                if (back) {
-                    movedBack.add(u);
-                } else {
-                    movedBack.remove(u);
-                }
+        OrionIdentifier.Mover<String> mover = (u, back) -> {
+            if (back) {
+                movedBack.add(u);
+            } else {
+                movedBack.remove(u);
             }
         };
         OrionIdentifier.FrameSource frames = new OrionIdentifier.FrameSource() {
@@ -94,7 +92,7 @@ public class OrionIdentifierTest {
                 return Math.abs((Integer) a - (Integer) b) * 100;
             }
         };
-        MovementProbe<String> probe = new MovementProbe<>(mover, frames, 50, 0);
+        MovementProbe<String> probe = new MovementProbe<>(mover, frames, 50, 0, 0);
         assertEquals("u5", OrionIdentifier.search(units, probe, log::add));
         assertTrue(movedBack.isEmpty(), "tapes moved back forward again");
     }
@@ -141,5 +139,42 @@ public class OrionIdentifierTest {
     private Target t(String name, double x, List<String> saved) {
         return new Target(name, new Location(LengthUnit.Millimeters, x, 20, -5, 0), true, Double.NaN,
                 f -> saved.add(name + "=" + String.format("%.2f", f.getX())));
+    }
+
+    @Test
+    void movesAreStaggeredOneAtATimeAndAlwaysRestored() throws Exception {
+        List<Long> starts = new ArrayList<>();
+        List<String> order = new ArrayList<>();
+        int[] failAt = {-1};
+        int[] calls = {0};
+        OrionIdentifier.Mover<String> mover = (u, back) -> {
+            starts.add(System.nanoTime() / 1_000_000);
+            order.add((back ? "-" : "+") + u);
+            if (calls[0]++ == failAt[0]) {
+                throw new Exception("bus error on " + u);
+            }
+        };
+        OrionIdentifier.FrameSource frames = new OrionIdentifier.FrameSource() {
+            public Object snap() {
+                return 0;
+            }
+
+            public double difference(Object a, Object b) {
+                return 0;
+            }
+        };
+        MovementProbe<String> probe = new MovementProbe<>(mover, frames, 1, 0, 40);
+        probe.test(Arrays.asList("a", "b", "c"));
+        assertEquals(Arrays.asList("-a", "-b", "-c", "+a", "+b", "+c"), order);
+        for (int i = 1; i < starts.size(); i++) {
+            assertTrue(starts.get(i) - starts.get(i - 1) >= 35, "gap " + (starts.get(i) - starts.get(i - 1)));
+        }
+
+        // a failing move still sends everything that was moved back forward again
+        order.clear();
+        calls[0] = 0;
+        failAt[0] = 1; // second move (-b) fails
+        assertThrows(Exception.class, () -> probe.test(Arrays.asList("a", "b", "c")));
+        assertEquals(Arrays.asList("-a", "-b", "+a", "+b"), order);
     }
 }
