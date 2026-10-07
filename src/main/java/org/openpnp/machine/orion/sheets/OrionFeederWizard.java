@@ -60,6 +60,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
     private final LocationButtonsPanel fiducialPanel;
     private final JLabel visionResult = new JLabel(" ");
     private final JLabel slotLabel = new JLabel(" ");
+    private final JTextField slotTf = new JTextField(7);
     private final javax.swing.JCheckBox followCb = new javax.swing.JCheckBox(
             "Shift pick X when the unit's slot X changes");
 
@@ -117,7 +118,6 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         // ---- slot position
         JPanel slot = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
         slot.setBorder(BorderFactory.createTitledBorder("Slot position X stored on the unit (mm along the rail)"));
-        JTextField slotTf = new JTextField(7);
         slot.add(slotTf);
         slot.add(slotLabel);
         JButton slotRead = new JButton("Read");
@@ -302,6 +302,9 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
                         msg += String.format("  -- MOVED %.1f mm since teaching", d.slotXMm - t);
                     }
                     slotLabel.setText(msg);
+                    if (slotTf.getText().isEmpty() && !Double.isNaN(d.slotXMm)) {
+                        slotTf.setText(String.format("%.1f", d.slotXMm));
+                    }
                     return;
                 }
             }
