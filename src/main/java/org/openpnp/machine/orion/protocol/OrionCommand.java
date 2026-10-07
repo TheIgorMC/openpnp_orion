@@ -32,6 +32,8 @@ public final class OrionCommand {
     public static final int SET_PEEL_RATE = 0x3B;
     public static final int GET_PEEL_RATE = 0x3C;
     public static final int FEED_BACK = 0x3D;
+    public static final int SET_POSITION = 0x3E;
+    public static final int GET_POSITION = 0x3F;
 
     public static final int PONG = 0x81;
     public static final int ACK = 0x82;
@@ -44,6 +46,7 @@ public final class OrionCommand {
     public static final int PEEL_TIME_INFO = 0xA4;
     public static final int I2C_SCAN_INFO = 0xA5;
     public static final int PEEL_RATE_INFO = 0xA6;
+    public static final int POSITION_INFO = 0xA7;
 
     public static final int ADDR_BROADCAST = 0;
     public static final int ADDR_MAX = 247;
@@ -78,6 +81,8 @@ public final class OrionCommand {
             case SET_PEEL_RATE: return "SET_PEEL_RATE";
             case GET_PEEL_RATE: return "GET_PEEL_RATE";
             case FEED_BACK: return "FEED_BACK";
+            case SET_POSITION: return "SET_POSITION";
+            case GET_POSITION: return "GET_POSITION";
             case PONG: return "PONG";
             case ACK: return "ACK";
             case NACK: return "NACK";
@@ -89,6 +94,7 @@ public final class OrionCommand {
             case PEEL_TIME_INFO: return "PEEL_TIME_INFO";
             case I2C_SCAN_INFO: return "I2C_SCAN_INFO";
             case PEEL_RATE_INFO: return "PEEL_RATE_INFO";
+            case POSITION_INFO: return "POSITION_INFO";
             default: return String.format("0x%02X", cmd);
         }
     }

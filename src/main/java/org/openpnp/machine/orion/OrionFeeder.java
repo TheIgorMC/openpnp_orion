@@ -59,6 +59,19 @@ public class OrionFeeder extends ReferenceFeeder {
     @Attribute(required = false)
     protected int feedRetries = 2;
 
+    // ---- slot position (stored on the unit, 0.1 mm along the rail X)
+
+    /** Slot X the unit reported when the pick location was taught, NaN = never taught. */
+    @Attribute(required = false)
+    protected double taughtSlotXMm = Double.NaN;
+
+    /** Shift the pick X by how far the unit's slot X moved since teaching (feeder swapped slots). */
+    @Attribute(required = false)
+    protected boolean followSlotPosition = false;
+
+    /** Latest slot X seen from the unit, NaN unknown. Not persisted. */
+    private transient double currentSlotXMm = Double.NaN;
+
     // ---- vision (fiducial based fine X position)
 
     public enum VisionMode {
@@ -219,6 +232,7 @@ public class OrionFeeder extends ReferenceFeeder {
         if (rail != l.bus.getRail()) {
             rail = l.bus.getRail();
         }
+        currentSlotXMm = l.info.slotXMm;
         Link link = new Link(l.bus, l.info);
         String key = serial + "@" + l.info.address;
         if (!key.equals(configuredForSerialAddress)) {
@@ -353,10 +367,62 @@ public class OrionFeeder extends ReferenceFeeder {
 
     @Override
     public Location getPickLocation() throws Exception {
-        if (visionDelta != null) {
-            return location.add(visionDelta);
+        Location l = location;
+        if (followSlotPosition && !Double.isNaN(taughtSlotXMm)) {
+            if (Double.isNaN(currentSlotXMm)) {
+                link(); // reads the unit's slot position
+            }
+            if (!Double.isNaN(currentSlotXMm)) {
+                l = l.add(new Location(LengthUnit.Millimeters, currentSlotXMm - taughtSlotXMm, 0, 0, 0));
+            }
         }
-        return location;
+        if (visionDelta != null) {
+            l = l.add(visionDelta);
+        }
+        return l;
+    }
+
+    public double getTaughtSlotXMm() {
+        return taughtSlotXMm;
+    }
+
+    public void setTaughtSlotXMm(double v) {
+        this.taughtSlotXMm = v;
+    }
+
+    public boolean isFollowSlotPosition() {
+        return followSlotPosition;
+    }
+
+    public void setFollowSlotPosition(boolean v) {
+        this.followSlotPosition = v;
+    }
+
+    public double getCurrentSlotXMm() {
+        return currentSlotXMm;
+    }
+
+    /** Read the slot X stored on the unit. */
+    public double readSlotPosition() throws Exception {
+        Link l = link();
+        currentSlotXMm = l.bus.getSlotPosition(l.address());
+        return currentSlotXMm;
+    }
+
+    /** Write the slot X to the unit (NaN clears it). */
+    public void writeSlotPosition(double mm) throws Exception {
+        Link l = link();
+        l.bus.setSlotPosition(l.address(), mm);
+        currentSlotXMm = mm;
+    }
+
+    /** Remember the unit's current slot X as the position the pick location was taught at. */
+    public void teachSlotPosition() throws Exception {
+        double x = readSlotPosition();
+        if (Double.isNaN(x)) {
+            throw new Exception("The unit has no slot position stored. Write one first.");
+        }
+        taughtSlotXMm = x;
     }
 
     @Override

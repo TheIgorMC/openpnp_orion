@@ -19,6 +19,10 @@ public class OrionDeviceInfo {
     public String serial;
     public int componentId;
     public int tapeWidthMm;
+    /** Slot position X stored on the unit, mm along the rail. NaN when unset. */
+    public double slotXMm = Double.NaN;
+    /** Address this unit held before the last power cycle, 0 = never assigned. */
+    public int lastAddress;
     public State state = State.ONLINE;
     public long lastSeenMs;
     public String note = "";
@@ -30,6 +34,8 @@ public class OrionDeviceInfo {
         c.serial = serial;
         c.componentId = componentId;
         c.tapeWidthMm = tapeWidthMm;
+        c.slotXMm = slotXMm;
+        c.lastAddress = lastAddress;
         c.state = state;
         c.lastSeenMs = lastSeenMs;
         c.note = note;

@@ -289,7 +289,20 @@ public class OrionBus {
         } catch (OrionException ignored) {
         }
 
+        double slotX = Double.NaN;
+        int last = 0;
+        try {
+            OrionFrame pos = expect(address, OrionCommand.GET_POSITION, new byte[0],
+                    DEFAULT_TIMEOUT_MS, OrionCommand.POSITION_INFO);
+            slotX = decodePosition(pos.u16(0));
+            last = pos.payload.length > 2 ? pos.u8(2) : 0;
+        } catch (OrionException ignored) {
+            // firmware older than v0.02b
+        }
+
         OrionDeviceInfo fresh = new OrionDeviceInfo();
+        fresh.slotXMm = slotX;
+        fresh.lastAddress = last;
         fresh.rail = rail;
         fresh.address = address;
         fresh.componentId = comp.u16(0);
@@ -336,9 +349,28 @@ public class OrionBus {
             if (byNonce.isEmpty()) {
                 break;
             }
+            Map<Integer, Integer> claims = new TreeMap<>();
+            for (OrionFrame r : byNonce.values()) {
+                if (r.payload.length >= 6 && r.u8(5) != 0) {
+                    claims.merge(r.u8(5), 1, Integer::sum);
+                }
+            }
             for (OrionFrame r : byNonce.values()) {
                 int nonce = r.u16(0);
-                int addr = allocateAddress();
+                int addr = -1;
+                int want = r.payload.length >= 6 ? r.u8(5) : 0;
+                if (want != 0 && want <= maxAddress && claims.get(want) == 1
+                        && (!devices.containsKey(want)
+                                || devices.get(want).state == OrionDeviceInfo.State.LOST)) {
+                    addr = want; // restore the pre-power-cycle address, unambiguous only
+                } else if (want != 0 && claims.get(want) > 1) {
+                    log(OrionBusListener.Direction.ERROR, String.format(
+                            "Address %d is claimed by %d unassigned units, not restoring it",
+                            want, claims.get(want)));
+                }
+                if (addr < 0) {
+                    addr = allocateAddress(claims.keySet());
+                }
                 if (addr < 0) {
                     throw new OrionException(OrionException.Kind.CONFLICT,
                             "No free address left on rail " + rail + " (max " + maxAddress + ")");
@@ -367,8 +399,11 @@ public class OrionBus {
         return added;
     }
 
-    private int allocateAddress() {
+    private int allocateAddress(Set<Integer> reserved) {
         for (int a = 1; a <= maxAddress; a++) {
+            if (reserved.contains(a)) {
+                continue;
+            }
             if (!devices.containsKey(a)
                     || devices.get(a).state == OrionDeviceInfo.State.LOST) {
                 return a;
@@ -494,6 +529,39 @@ public class OrionBus {
         int v = expect(address, OrionCommand.GET_PEEL_RATE, new byte[0], DEFAULT_TIMEOUT_MS,
                 OrionCommand.PEEL_RATE_INFO).u16(0);
         return v == 0xFFFF ? -1 : v;
+    }
+
+    /** Position field: raw uint16 in 0.1 mm, 0xFFFF = unset. */
+    public static double decodePosition(int raw) {
+        return raw == 0xFFFF ? Double.NaN : raw / 10.0;
+    }
+
+    /** Store the slot position (mm along X); NaN clears it. */
+    public void setSlotPosition(int address, double mm) throws OrionException {
+        int raw = Double.isNaN(mm) ? 0xFFFF : (int) Math.round(mm * 10.0);
+        if (raw < 0 || raw > 0xFFFE) {
+            if (!Double.isNaN(mm)) {
+                throw new OrionException(OrionException.Kind.NACK, OrionError.BAD_PARAM,
+                        "Slot position out of range (0..6553.4 mm): " + mm);
+            }
+        }
+        ack(address, OrionCommand.SET_POSITION, be16(raw));
+        OrionDeviceInfo d = devices.get(address);
+        if (d != null) {
+            d.slotXMm = decodePosition(raw);
+        }
+    }
+
+    /** @return slot position in mm, NaN if unset. */
+    public double getSlotPosition(int address) throws OrionException {
+        OrionFrame f = expect(address, OrionCommand.GET_POSITION, new byte[0], DEFAULT_TIMEOUT_MS,
+                OrionCommand.POSITION_INFO);
+        double v = decodePosition(f.u16(0));
+        OrionDeviceInfo d = devices.get(address);
+        if (d != null) {
+            d.slotXMm = v;
+        }
+        return v;
     }
 
     public void setLedBrightness(int address, int level) throws OrionException {

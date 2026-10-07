@@ -59,6 +59,9 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
     private final JTextField fzTf = new JTextField(8);
     private final LocationButtonsPanel fiducialPanel;
     private final JLabel visionResult = new JLabel(" ");
+    private final JLabel slotLabel = new JLabel(" ");
+    private final javax.swing.JCheckBox followCb = new javax.swing.JCheckBox(
+            "Shift pick X when the unit's slot X changes");
 
     public OrionFeederWizard(OrionFeeder feeder) {
         this.feeder = feeder;
@@ -110,6 +113,39 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         locationPanel = new LocationButtonsPanel(xTf, yTf, zTf, rotTf);
         loc.add(locationPanel);
         contentPanel.add(loc);
+
+        // ---- slot position
+        JPanel slot = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        slot.setBorder(BorderFactory.createTitledBorder("Slot position X stored on the unit (mm along the rail)"));
+        JTextField slotTf = new JTextField(7);
+        slot.add(slotTf);
+        slot.add(slotLabel);
+        JButton slotRead = new JButton("Read");
+        slotRead.addActionListener(e -> OrionUi.run("Read slot position", () -> feeder.readSlotPosition(),
+                v -> {
+                    slotTf.setText(Double.isNaN(v) ? "" : String.format("%.1f", v));
+                    refreshState();
+                }));
+        slot.add(slotRead);
+        JButton slotWrite = new JButton("Write to unit");
+        slotWrite.addActionListener(e -> {
+            double v;
+            try {
+                v = slotTf.getText().trim().isEmpty() ? Double.NaN : Double.parseDouble(slotTf.getText().trim());
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Enter the slot X in mm, or leave empty to clear.");
+                return;
+            }
+            final double mm = v;
+            OrionUi.run("Write slot position", () -> feeder.writeSlotPosition(mm));
+        });
+        slot.add(slotWrite);
+        JButton teach = new JButton("Teach (current slot = taught)");
+        teach.setToolTipText("Remember the unit's slot X as the one the pick location was taught at");
+        teach.addActionListener(e -> OrionUi.run("Teach slot position", () -> feeder.teachSlotPosition()));
+        slot.add(teach);
+        slot.add(followCb);
+        contentPanel.add(slot);
 
         // ---- vision
         JPanel vis = OrionUi.grid();
@@ -259,6 +295,13 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
                 if (d != null) {
                     stateLabel.setText(String.format("%s on rail %d, address %d %s", d.state,
                             d.rail + 1, d.address, d.note.isEmpty() ? "" : "(" + d.note + ")"));
+                    double t = feeder.getTaughtSlotXMm();
+                    String msg = Double.isNaN(d.slotXMm) ? "unit slot X: not set"
+                            : String.format("unit slot X: %.1f mm", d.slotXMm);
+                    if (!Double.isNaN(t) && !Double.isNaN(d.slotXMm) && Math.abs(d.slotXMm - t) > 0.05) {
+                        msg += String.format("  -- MOVED %.1f mm since teaching", d.slotXMm - t);
+                    }
+                    slotLabel.setText(msg);
                     return;
                 }
             }
@@ -293,6 +336,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         bind(UpdateStrategy.READ_WRITE, location, "rotation", rotTf, "text", doubleConverter);
         bind(UpdateStrategy.READ, location, "location", locationPanel, "baseLocation");
 
+        addWrappedBinding(feeder, "followSlotPosition", followCb, "selected");
         addWrappedBinding(feeder, "visionMode", visionModeCb, "selectedItem");
         addWrappedBinding(feeder, "fiducialPart", fiducialPartCb, "selectedItem");
         addWrappedBinding(feeder, "visionXOnly", xOnlyCb, "selected");

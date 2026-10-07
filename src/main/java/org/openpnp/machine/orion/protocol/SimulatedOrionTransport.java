@@ -22,6 +22,8 @@ public class SimulatedOrionTransport implements OrionTransport {
         public int peelTimeMs = 0xFFFF;
         public int peelRate = 0xFFFF;
         public int angle = 0;
+        public int posRaw = 0xFFFF;
+        public int lastAddr = 0;
         public int feeds = 0;
         public int peels = 0;
         public OrionError failNextMove = OrionError.NONE;
@@ -153,12 +155,14 @@ public class SimulatedOrionTransport implements OrionTransport {
                 }
                 return new OrionFrame(0, OrionCommand.DISCOVER_HERE, (byte) (f.nonce >> 8),
                         (byte) f.nonce, (byte) (f.componentId >> 8), (byte) f.componentId,
-                        (byte) f.tapeWidth);
+                        (byte) f.tapeWidth, (byte) f.lastAddr, (byte) (f.posRaw >> 8),
+                        (byte) f.posRaw);
             case OrionCommand.ASSIGN_ADDR:
                 if (!unassigned || req.u16(0) != f.nonce) {
                     return null;
                 }
                 f.address = req.u8(2);
+                f.lastAddr = f.address;
                 return ackFrame(f);
             default:
                 break;
@@ -222,6 +226,12 @@ public class SimulatedOrionTransport implements OrionTransport {
                 }
                 f.peels++;
                 return ackFrame(f);
+            case OrionCommand.SET_POSITION:
+                f.posRaw = req.u16(0);
+                return ackFrame(f, req.payload);
+            case OrionCommand.GET_POSITION:
+                return new OrionFrame(f.address, OrionCommand.POSITION_INFO,
+                        concat(be16(f.posRaw), new byte[] {(byte) f.lastAddr}));
             case OrionCommand.SET_PEEL_TIME:
                 if (req.u16(0) < 10 || req.u16(0) > 5000) {
                     return nack(f, OrionError.BAD_PARAM);

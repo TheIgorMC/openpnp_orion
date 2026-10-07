@@ -185,7 +185,11 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         OrionDeviceInfo info;
         OrionFeeder feeder;
 
+        /** Sort key: the unit's own slot X, else its feeder's pick X, else last. */
         double x() {
+            if (info != null && !Double.isNaN(info.slotXMm)) {
+                return info.slotXMm;
+            }
             return feeder == null ? Double.MAX_VALUE : feeder.getLocation().getX();
         }
     }
@@ -195,7 +199,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         private final List<Row> rows = new ArrayList<>();
         private final AbstractTableModel model = new AbstractTableModel() {
             private final String[] cols = {"#", "Address", "Serial", "State", "Comp", "Width", "Feeder",
-                    "X (mm)", "Note"};
+                    "Slot X (mm)", "Pick X (mm)", "Note"};
 
             @Override
             public int getRowCount() {
@@ -232,6 +236,8 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                     case 6:
                         return row.feeder == null ? "(unbound)" : row.feeder.getName();
                     case 7:
+                        return d == null || Double.isNaN(d.slotXMm) ? "" : String.format("%.1f", d.slotXMm);
+                    case 8:
                         return row.feeder == null ? "" : String.format("%.2f", row.feeder.getLocation().getX());
                     default:
                         return d == null ? "configured feeder not found on this rail" : d.note;
@@ -423,7 +429,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                     problems++;
                 }
             }
-            summary.setText(String.format("  %d unit(s) shown, %d online, %d unbound, %d with problems.  Sorted by feeder X position.",
+            summary.setText(String.format("  %d unit(s) shown, %d online, %d unbound, %d with problems.  Sorted by slot X (units without one: by pick X).",
                     rows.size(), online, unbound, problems));
             model.fireTableDataChanged();
         }

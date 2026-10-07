@@ -152,4 +152,49 @@ public class OrionBusTest {
         assertEquals(1, bus1.getDevices().size());
         assertNotEquals(bus.getDevices().get(0).serial, bus1.getDevices().get(0).serial);
     }
+
+    @Test
+    void slotPositionIsReadOnScanAndWritable() throws Exception {
+        SimulatedOrionTransport.SimFeeder f = sim.addFeeder(0, 1);
+        f.posRaw = 1234;
+        bus.scan(null);
+        OrionDeviceInfo d = bus.getDevices().get(0);
+        assertEquals(123.4, d.slotXMm, 1e-9);
+        bus.setSlotPosition(d.address, 14.3);
+        assertEquals(143, f.posRaw);
+        assertEquals(14.3, bus.getSlotPosition(d.address), 1e-9);
+        bus.setSlotPosition(d.address, Double.NaN);
+        assertTrue(Double.isNaN(bus.getSlotPosition(d.address)));
+    }
+
+    @Test
+    void rebootedUnitsGetTheirOldAddressesBack() throws Exception {
+        SimulatedOrionTransport.SimFeeder a = sim.addFeeder(0, 1);
+        SimulatedOrionTransport.SimFeeder b = sim.addFeeder(0, 2);
+        SimulatedOrionTransport.SimFeeder c = sim.addFeeder(0, 3);
+        bus.scan(null);
+        int ia = a.address;
+        int ib = b.address;
+        int ic = c.address;
+        sim.reboot(a);
+        sim.reboot(b);
+        sim.reboot(c);
+        OrionBus fresh = new OrionBus(sim, 0); // host restarted, empty table
+        fresh.setRetries(0);
+        fresh.discoverAndAssign();
+        assertEquals(ia, a.address);
+        assertEquals(ib, b.address);
+        assertEquals(ic, c.address);
+    }
+
+    @Test
+    void ambiguousLastAddressIsNotRestored() throws Exception {
+        SimulatedOrionTransport.SimFeeder a = sim.addFeeder(0, 1);
+        SimulatedOrionTransport.SimFeeder b = sim.addFeeder(0, 2);
+        a.lastAddr = 5;
+        b.lastAddr = 5;
+        bus.discoverAndAssign();
+        assertNotEquals(a.address, b.address);
+        assertTrue(a.address != 0 && b.address != 0);
+    }
 }

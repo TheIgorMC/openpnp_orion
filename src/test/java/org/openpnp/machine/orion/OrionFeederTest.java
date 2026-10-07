@@ -145,4 +145,18 @@ public class OrionFeederTest {
         assertEquals(1, loaded.getRail());
         assertEquals("COM9", mgr.getSettings().getAdapterPort());
     }
+
+    @Test
+    void followingSlotPositionShiftsPickX() throws Exception {
+        OrionFeeder f = bound(0);
+        SimulatedOrionTransport.SimFeeder s = sim().getFeeders().get(0);
+        f.setLocation(new org.openpnp.model.Location(org.openpnp.model.LengthUnit.Millimeters, 100, 50, 0, 0));
+        f.writeSlotPosition(20.0);
+        f.teachSlotPosition();
+        f.setFollowSlotPosition(true);
+        assertEquals(100.0, f.getPickLocation().getX(), 1e-9);
+        f.writeSlotPosition(26.5); // unit now sits in another slot
+        assertEquals(106.5, f.getPickLocation().getX(), 1e-9);
+        assertEquals(265, s.posRaw);
+    }
 }

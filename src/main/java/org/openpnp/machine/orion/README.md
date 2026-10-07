@@ -64,6 +64,19 @@ the first reply (needed for DISCOVER, where several feeders answer with random j
 * A feed that times out triggers a rescan and retry (`Feed retries`). A NOT_READY NACK re-pushes
   the pitch and retries. Stall / fault / magnet-lost / timeout NACKs are shown with their meaning.
 
+## Slot position X and address restore (firmware v0.02b)
+
+Each unit stores a slot position X (0.1 mm units, `CMD_SET_POSITION` / `CMD_GET_POSITION`, announced
+in discovery together with its last address). The Bus Manager reads it on every scan and sorts each
+rail by it, so the table matches the physical layout, also for unbound units. It is a cheap layout
+check, not an identity: binding stays on the serial.
+
+* Feeder tab: Read / Write the position on the unit; "Teach" remembers the position the pick
+  location was taught at; with "Shift pick X when the unit's slot X changes" a feeder moved to
+  another slot gets its pick X shifted by the difference. A moved unit is flagged in the state line.
+* After a power cycle units announce their last address; a scan gives each its old address back when
+  that is unambiguous (no two units claim it, and it is free), otherwise it assigns a fresh one.
+
 ## Vision (fine X position)
 
 A fiducial part on or beside the feeder marks its real position. Set the fiducial part (its
