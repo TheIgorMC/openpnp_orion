@@ -12,6 +12,6 @@ public class OrionBusManagerSheet implements PropertySheetHolder.PropertySheet {
 
     @Override
     public JPanel getPropertySheetPanel() {
-        return new OrionBusManagerPanel();
+        return new OrionBusManagerLauncher();
     }
 }
