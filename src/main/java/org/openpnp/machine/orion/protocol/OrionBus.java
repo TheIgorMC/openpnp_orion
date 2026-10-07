@@ -163,6 +163,10 @@ public class OrionBus {
         return null;
     }
 
+    public synchronized void forgetAddress(int address) {
+        devices.remove(address);
+    }
+
     public synchronized void forgetAll() {
         devices.clear();
     }
@@ -228,7 +232,15 @@ public class OrionBus {
             }
         }
         for (int a : seen) {
-            identify(a);
+            try {
+                identify(a);
+            } catch (OrionException e) {
+                if (e.kind == OrionException.Kind.TRANSPORT) {
+                    throw e;
+                }
+                log(OrionBusListener.Direction.ERROR,
+                        "Address " + a + " answered a ping but could not be identified: " + e.getMessage());
+            }
         }
         // Anything we knew about that did not answer is now lost.
         for (OrionDeviceInfo d : new ArrayList<>(devices.values())) {
