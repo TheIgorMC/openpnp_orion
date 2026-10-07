@@ -38,6 +38,52 @@ public class OrionRailSettings {
     @Attribute(required = false)
     private boolean autoRescan = true;
 
+    /** Where the fiber spot is seen, relative to the large fiducial (mm, machine axes). */
+    @Attribute(required = false)
+    private double fiberOffsetX = 0;
+
+    @Attribute(required = false)
+    private double fiberOffsetY = 0;
+
+    public double getFiberOffsetX() {
+        return fiberOffsetX;
+    }
+
+    public void setFiberOffsetX(double v) {
+        fiberOffsetX = v;
+    }
+
+    public double getFiberOffsetY() {
+        return fiberOffsetY;
+    }
+
+    public void setFiberOffsetY(double v) {
+        fiberOffsetY = v;
+    }
+
+    /** Where a sprocket hole is seen for the tape-movement check, relative to the large fiducial. */
+    @Attribute(required = false)
+    private double holeOffsetX = 0;
+
+    @Attribute(required = false)
+    private double holeOffsetY = 0;
+
+    public double getHoleOffsetX() {
+        return holeOffsetX;
+    }
+
+    public void setHoleOffsetX(double v) {
+        holeOffsetX = v;
+    }
+
+    public double getHoleOffsetY() {
+        return holeOffsetY;
+    }
+
+    public void setHoleOffsetY(double v) {
+        holeOffsetY = v;
+    }
+
     OrionRailSettings() {
     }
 

@@ -48,7 +48,10 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
 
     public OrionBusManagerPanel() {
         setLayout(new BorderLayout());
-        add(buildConnectionPanel(), BorderLayout.NORTH);
+        JTabbedPane top = new JTabbedPane();
+        top.addTab("Connection", buildConnectionPanel());
+        top.addTab("Feeder identification (fiber / tape)", buildIdentifyPanel());
+        add(top, BorderLayout.NORTH);
         add(railTabs, BorderLayout.CENTER);
         JPanel south = new JPanel(new BorderLayout());
         south.add(statusLabel, BorderLayout.CENTER);
@@ -108,6 +111,10 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             s.setLargeFiducialPartId(part == null ? "" : part.getId());
         });
         OrionUi.row(p, 6, "Large fiducial part (feeder finder)", fid);
+        JComboBox<OrionSettings.UnverifiedPolicy> policy = new JComboBox<>(OrionSettings.UnverifiedPolicy.values());
+        policy.setSelectedItem(s.getUnverifiedPolicy());
+        policy.addActionListener(e -> s.setUnverifiedPolicy((OrionSettings.UnverifiedPolicy) policy.getSelectedItem()));
+        OrionUi.row(p, 8, "If a rail was not verified by vision when a job starts", policy);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
         JButton connect = new JButton("Connect");
@@ -132,6 +139,120 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             setter.accept(o == null ? "" : o.toString());
         });
         return cb;
+    }
+
+
+    private JPanel buildIdentifyPanel() {
+        OrionSettings s = mgr.getSettings();
+        JPanel p = OrionUi.grid();
+        JComboBox<OrionSettings.IdentifyMethod> method = new JComboBox<>(OrionSettings.IdentifyMethod.values());
+        method.setSelectedItem(s.getIdentifyMethod());
+        method.addActionListener(e -> s.setIdentifyMethod((OrionSettings.IdentifyMethod) method.getSelectedItem()));
+        OrionUi.row(p, 0, "Used when a fiducial cannot be matched to a unit directly", method);
+
+        JPanel fib = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        fib.add(new JLabel("brightness rise >"));
+        fib.add(spinner(s.getFiberThreshold(), 1, 255, 1, s::setFiberThreshold));
+        fib.add(new JLabel("settle (ms)"));
+        fib.add(spinner(s.getSettleMs(), 0, 5000, 50, v -> s.setSettleMs((int) v)));
+        OrionUi.row(p, 1, "Fiber light", fib);
+        JPanel tape = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        tape.add(new JLabel("changed pixels >"));
+        tape.add(spinner(s.getMovementThreshold(), 1, 100000, 10, s::setMovementThreshold));
+        tape.add(new JLabel("moved back (mm)"));
+        tape.add(spinner(s.getMovementMm(), 0.1, 5, 0.1, s::setMovementMm));
+        OrionUi.row(p, 2, "Tape movement (fallback)", tape);
+
+        JPanel pipes = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        pipes.add(button("Edit fiber pipeline...", () -> editPipeline("Orion fiber detection",
+                s.getFiberPipeline())));
+        pipes.add(button("Reset", () -> s.resetFiberPipeline()));
+        pipes.add(button("Edit tape pipeline...", () -> editPipeline("Orion tape movement",
+                s.getMovementPipeline())));
+        pipes.add(button("Reset", () -> s.resetMovementPipeline()));
+        OrionUi.row(p, 3, "Pipelines", pipes);
+
+        JPanel tune = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        tune.add(button("Fiber ON", () -> tuneAction("Fiber on", f -> f.setFiber(true))));
+        tune.add(button("Fiber OFF", () -> tuneAction("Fiber off", f -> f.setFiber(false))));
+        tune.add(button("Test fiber", () -> testFiber()));
+        tune.add(button("Test tape movement", () -> testMovement()));
+        OrionUi.row(p, 4, "Tuning (unit selected below)", tune);
+        JLabel hint = new JLabel("<html><body style='width:560px'>Jog the camera over the fiber spot (or a "
+                + "sprocket hole), press <b>Fiber ON</b>, open the pipeline and tune the mask / blur until "
+                + "the spot stands out. <b>Test</b> reports the measured values and the verdict; set the "
+                + "threshold between 'off' and 'on'. The spot / hole offsets from the large fiducial are set "
+                + "per rail below.</body></html>");
+        OrionUi.row(p, 5, "", hint);
+        return p;
+    }
+
+    private JButton button(String text, Runnable r) {
+        JButton b = new JButton(text);
+        b.addActionListener(e -> r.run());
+        return b;
+    }
+
+    private javax.swing.JSpinner spinner(double v, double min, double max, double step,
+            java.util.function.DoubleConsumer set) {
+        javax.swing.JSpinner sp = new javax.swing.JSpinner(new SpinnerNumberModel(v, min, max, step));
+        sp.setPreferredSize(new java.awt.Dimension(80, sp.getPreferredSize().height));
+        sp.addChangeListener(e -> set.accept(((Number) sp.getValue()).doubleValue()));
+        return sp;
+    }
+
+    private void editPipeline(String title, org.openpnp.vision.pipeline.CvPipeline pipeline) {
+        try {
+            pipeline.setProperty("camera", Configuration.get().getMachine().getDefaultHead().getDefaultCamera());
+            org.openpnp.vision.pipeline.ui.CvPipelineEditor editor =
+                    new org.openpnp.vision.pipeline.ui.CvPipelineEditor(pipeline);
+            new org.openpnp.vision.pipeline.ui.CvPipelineEditorDialog(MainFrame.get(), title, editor)
+                    .setVisible(true);
+        } catch (Exception e) {
+            org.openpnp.gui.support.MessageBoxes.errorBox(MainFrame.get(), "Pipeline editor", e);
+        }
+    }
+
+    private RailPanel currentRail() {
+        Component c = railTabs.getSelectedComponent();
+        return c instanceof RailPanel ? (RailPanel) c : null;
+    }
+
+    private OrionFeeder selectedOrTemp() {
+        RailPanel rp = currentRail();
+        OrionFeeder f = rp == null ? null : rp.feederForSelected();
+        if (f == null) {
+            JOptionPane.showMessageDialog(this, "Select a unit in the rail table first.");
+        }
+        return f;
+    }
+
+    private void tuneAction(String what, FeederThrunnable a) {
+        OrionFeeder f = selectedOrTemp();
+        if (f != null) {
+            OrionUi.run(what, () -> a.run(f));
+        }
+    }
+
+    private void testFiber() {
+        OrionFeeder f = selectedOrTemp();
+        if (f != null) {
+            OrionUi.run("Test fiber", () -> mgr.testFiber(f), r -> JOptionPane.showMessageDialog(this,
+                    String.format("Fiber off: %.0f\nFiber on:  %.0f\nRise:      %.0f   (threshold %.0f)\n\n"
+                            + "Verdict: %s", r[0], r[1], r[2], r[3],
+                            r[2] >= r[3] ? "DETECTED" : "NOT detected: brighter LED, bigger mask, or lower threshold"),
+                    "Fiber detection test", JOptionPane.INFORMATION_MESSAGE));
+        }
+    }
+
+    private void testMovement() {
+        OrionFeeder f = selectedOrTemp();
+        if (f != null) {
+            OrionUi.run("Test movement", () -> mgr.testMovement(f), r -> JOptionPane.showMessageDialog(this,
+                    String.format("Changed pixels: %.0f   (threshold %.0f)\n\nVerdict: %s", r[0], r[1],
+                            r[0] >= r[1] ? "MOVEMENT DETECTED" : "NOT detected: check mask / hole position / "
+                                    + "distance moved"), "Tape movement test", JOptionPane.INFORMATION_MESSAGE));
+        }
     }
 
     // ------------------------------------------------------------------ scanning
@@ -302,13 +423,15 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
 
         private JPanel visionSettings() {
             org.openpnp.machine.orion.OrionRailSettings rs = mgr.getSettings().getRailSettings(rail);
-            JPanel p = new JPanel(new java.awt.GridLayout(2, 1));
+            JPanel p = new JPanel(new java.awt.GridLayout(3, 1));
             p.setBorder(BorderFactory.createTitledBorder(
                     "Vision scan of this rail (large fiducials; machine coordinates, mm)"));
             JPanel row1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
             JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
+            JPanel row3 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
             p.add(row1);
             p.add(row2);
+            p.add(row3);
             row1.add(new JLabel("X from"));
             row1.add(dspin(rs.getXMin(), -5000, 5000, 1, rs::setXMin));
             row1.add(new JLabel("to"));
@@ -325,9 +448,15 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             row2.add(dspin(rs.getMinSaveMm(), 0, 5, 0.01, rs::setMinSaveMm));
             row2.add(new JLabel("reject >"));
             row2.add(dspin(rs.getMaxShiftMm(), 0.1, 50, 0.1, rs::setMaxShiftMm));
+            row3.add(new JLabel("fiber spot dX/dY"));
+            row3.add(dspin(rs.getFiberOffsetX(), -500, 500, 0.5, rs::setFiberOffsetX));
+            row3.add(dspin(rs.getFiberOffsetY(), -500, 500, 0.5, rs::setFiberOffsetY));
+            row3.add(new JLabel("hole dX/dY"));
+            row3.add(dspin(rs.getHoleOffsetX(), -500, 500, 0.5, rs::setHoleOffsetX));
+            row3.add(dspin(rs.getHoleOffsetY(), -500, 500, 0.5, rs::setHoleOffsetY));
             JCheckBox auto = new JCheckBox("Rescan automatically when a feeder is missing", rs.isAutoRescan());
             auto.addActionListener(e -> rs.setAutoRescan(auto.isSelected()));
-            row2.add(auto);
+            row3.add(auto);
             return p;
         }
 
@@ -435,6 +564,25 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             return b;
         }
 
+        OrionFeeder feederForSelected() {
+            Row r = selected();
+            if (r == null) {
+                return null;
+            }
+            if (r.feeder != null) {
+                return r.feeder;
+            }
+            if (r.info == null) {
+                return null;
+            }
+            OrionFeeder tmp = new OrionFeeder();
+            tmp.setName("unit " + r.info.address);
+            tmp.setSerial(r.info.serial);
+            tmp.setRail(rail);
+            tmp.setPitchMm(0);
+            return tmp;
+        }
+
         private Row selected() {
             int i = table.getSelectedRow();
             return i < 0 || i >= rows.size() ? null : rows.get(i);
@@ -521,8 +669,15 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                     problems++;
                 }
             }
-            summary.setText(String.format("  %d unit(s) shown, %d online, %d unbound, %d with problems.  Sorted by slot X (units without one: by pick X).",
-                    rows.size(), online, unbound, problems));
+            String problem = mgr.railCheckProblem(rail);
+            org.openpnp.machine.orion.OrionManager.RailCheck check = mgr.getRailCheck(rail);
+            String verified = problem == null && check != null
+                    ? "  VERIFIED by vision at " + new java.text.SimpleDateFormat("HH:mm:ss").format(
+                            new java.util.Date(check.time)) + "."
+                    : "  NOT VERIFIED: " + problem;
+            summary.setForeground(problem == null ? new Color(0x006400) : Color.RED.darker());
+            summary.setText(String.format("<html><body style='width:1000px'>%d unit(s), %d online, %d unbound, "
+                    + "%d with problems.%s</body></html>", rows.size(), online, unbound, problems, verified));
             model.fireTableDataChanged();
         }
 

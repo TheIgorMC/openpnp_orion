@@ -564,6 +564,11 @@ public class OrionBus {
         return v;
     }
 
+    /** The second (fiber) LED on or off. */
+    public void setFiberLed(int address, boolean on) throws OrionException {
+        ack(address, OrionCommand.SET_EXT_LED, (byte) (on ? 1 : 0));
+    }
+
     public void setLedBrightness(int address, int level) throws OrionException {
         ack(address, OrionCommand.SET_LED_BRIGHTNESS, (byte) level);
     }

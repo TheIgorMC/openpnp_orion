@@ -194,4 +194,52 @@ public class OrionFeederTest {
         assertEquals(5.0, back.getScanStepMm());
         assertEquals("FID-L", mgr.getSettings().getLargeFiducialPartId());
     }
+
+    @Test
+    void unverifiedRailWarnsBlocksOrIsIgnoredAccordingToPolicy() throws Exception {
+        OrionFeeder f = bound(0);
+        mgr.clearRailChecks();
+        assertNotNull(mgr.railCheckProblem(0), "never verified");
+
+        mgr.getSettings().setUnverifiedPolicy(OrionSettings.UnverifiedPolicy.Off);
+        f.prepareForJob(false); // silently fine
+
+        mgr.getSettings().setUnverifiedPolicy(OrionSettings.UnverifiedPolicy.Warn);
+        f.prepareForJob(false); // warns, does not throw
+        assertTrue(mgr.getLog().stream().anyMatch(e -> e.text.contains("not been checked")));
+
+        mgr.getSettings().setUnverifiedPolicy(OrionSettings.UnverifiedPolicy.Block);
+        assertThrows(Exception.class, () -> f.prepareForJob(false));
+
+        // a clean verify clears it
+        mgr.recordRailCheck(0, true, "ok");
+        assertNull(mgr.railCheckProblem(0));
+        f.prepareForJob(false);
+
+        // ... until the feeders on the rail change
+        sim().addFeeder(0, 77);
+        mgr.getBus(0).scan(null);
+        assertNotNull(mgr.railCheckProblem(0));
+
+        // and a verify that found problems is not trusted either
+        mgr.recordRailCheck(0, false, "1 missing");
+        assertTrue(mgr.railCheckProblem(0).contains("1 missing"));
+    }
+
+    @Test
+    void identificationSettingsAndPipelinesSurviveSaveAndReload() throws Exception {
+        OrionSettings st = mgr.getSettings();
+        st.setIdentifyMethod(OrionSettings.IdentifyMethod.TapeMovement);
+        st.setFiberThreshold(77);
+        st.getFiberPipeline(); // creates the default
+        mgr.getSettings().getRailSettings(0).setFiberOffsetX(12.5);
+        Configuration.get().save();
+        Configuration.initialize(dir);
+        Configuration.get().load();
+        OrionSettings back = mgr.getSettings();
+        assertEquals(OrionSettings.IdentifyMethod.TapeMovement, back.getIdentifyMethod());
+        assertEquals(77.0, back.getFiberThreshold());
+        assertEquals(12.5, back.getRailSettings(0).getFiberOffsetX());
+        assertEquals(4, back.getFiberPipeline().getStages().size());
+    }
 }

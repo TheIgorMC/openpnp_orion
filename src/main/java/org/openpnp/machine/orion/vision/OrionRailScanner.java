@@ -29,6 +29,14 @@ public class OrionRailScanner {
         Location find(Location nominal) throws Exception;
     }
 
+    /** Decides which pending target a not-yet-claimed fiducial belongs to (light / tape movement). */
+    public interface Identifier {
+        String method();
+
+        /** @return the target the fiducial belongs to, or null if it could not be decided. */
+        Target identify(Location fiducial, List<Target> pending) throws Exception;
+    }
+
     public interface Progress {
         void update(String text, int done, int total);
     }
@@ -66,6 +74,8 @@ public class OrionRailScanner {
         public final double slotShiftMm;
         /** Called with the measured fiducial location when the feeder was found / relocated. */
         public final Consumer<Location> onFound;
+        /** Caller's handle for the feeder (used by identifiers). */
+        public Object tag;
 
         public State state = State.MISSING;
         public Location found;
@@ -109,11 +119,18 @@ public class OrionRailScanner {
     private final Params p;
     private final FiducialFinder finder;
     private final Progress progress;
+    private Identifier identifier;
 
     public OrionRailScanner(Params params, FiducialFinder finder, Progress progress) {
         this.p = params;
         this.finder = finder;
         this.progress = progress;
+    }
+
+    /** Optional: decide ambiguous leftovers by lighting fibers / moving tapes. */
+    public OrionRailScanner withIdentifier(Identifier identifier) {
+        this.identifier = identifier;
+        return this;
     }
 
     private void report(String text, int done, int total) {
@@ -208,6 +225,25 @@ public class OrionRailScanner {
             claim(pending.get(0), candidates.get(0), "only unmatched feeder and fiducial", r);
             candidates.clear();
             pending.clear();
+        }
+        // 3c. several left: ask the identifier (fiber light, else tape movement), one fiducial at a time
+        if (identifier != null && !pending.isEmpty()) {
+            for (Location c : new ArrayList<>(candidates)) {
+                if (pending.isEmpty()) {
+                    break;
+                }
+                report("Identifying fiducial at X=" + fmt(x(c)) + " (" + identifier.method() + ")",
+                        0, 1);
+                Target hit = identifier.identify(c, new ArrayList<>(pending));
+                if (hit != null && pending.contains(hit)) {
+                    claim(hit, c, "identified by " + identifier.method(), r);
+                    pending.remove(hit);
+                    candidates.remove(c);
+                } else {
+                    r.log.add(String.format("fiducial at X=%.2f: %s could not decide", x(c),
+                            identifier.method()));
+                }
+            }
         }
         for (Target t : pending) {
             t.state = State.UNRESOLVED;

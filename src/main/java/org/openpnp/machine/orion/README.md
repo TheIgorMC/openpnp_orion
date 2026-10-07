@@ -96,9 +96,38 @@ Per rail you give the X range, the Y/Z of the large (middle) fiducials, step (6 
    Fiducials nobody claims are reported (new, unbound feeders).
 
 With "Rescan automatically" off, step 3 is skipped and the result just says a rescan is needed.
-Not implemented: finding which unit is which by lighting the fibers in a binary search.
-Verify moves the camera, so it only runs on a homed machine, as a machine task; it is a button
-for now, not yet run automatically before a job.
+Verify moves the camera, so it only runs on a homed machine, as a machine task; it is a button,
+not run automatically before a job.
+
+### Warning when no verify was run
+
+At job preparation every bound Orion feeder checks whether its rail was verified by vision since
+the program started, with a clean result, and with the same units on the bus as at that time
+(a new, missing or moved unit invalidates it). If not: a warning dialog (once a minute per rail),
+an entry in the Orion log, an OpenPnP Issues & Solutions entry, and a red "NOT VERIFIED" line on the
+rail tab. Setting (connection tab): *Don't check* / *Warn (job still runs)* / *Block the job*.
+
+### Which unit is this fiducial? Fiber light, tape movement fallback
+
+When fiducials are left over that cannot be matched directly, the camera goes to each one (plus the
+per-rail fiber spot offset) and a **binary search** decides which pending unit it is: half of the
+candidates light their fiber (`CMD_SET_EXT_LED`), the camera sees whether the spot lit up, the
+answer halves the candidate set. First all candidates are lit together to prove the light is
+visible at all, and the last one is confirmed alone, so a dim LED or a wrong spot returns "could not
+decide" instead of a guess. 8 candidates take 5 lit/unlit comparisons.
+
+Method (Feeder identification tab): *Off*, *Fiber light*, *Tape movement*, or *Fiber light, tape
+movement as fallback*. The fallback goes to the sprocket-hole offset, takes a picture of the masked
+hole, moves the candidates' tapes back (default 0.5 mm, `CMD_JOG`), takes another and counts changed
+pixels, then moves forward again; same binary search, slower because tapes really move.
+
+Tuning (same tab): two normal OpenPnP pipelines, *fiber* and *tape movement*, edited with the
+pipeline editor. Both end in a gray image of a masked spot (circle mask stage `FiberSpot` /
+`TapeHole`, blur, gray). Fiber brightness = peak of that image; movement = pixels changed by more than
+25 levels. Procedure: select the unit in the rail table, jog the camera over the fiber spot, **Fiber
+ON**, edit the pipeline until the spot stands out, **Test fiber** shows off / on / rise and the verdict
+against the threshold (**Fiber OFF** to switch it off). **Test tape movement** does the same with
+the jog. A brighter LED just raises the rise; adjust the threshold.
 
 ## Vision (fine X position)
 

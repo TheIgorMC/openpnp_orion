@@ -3,7 +3,10 @@ package org.openpnp.machine.orion;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.openpnp.machine.orion.vision.OrionPipelines;
+import org.openpnp.vision.pipeline.CvPipeline;
 import org.simpleframework.xml.Attribute;
+import org.simpleframework.xml.Element;
 import org.simpleframework.xml.ElementList;
 import org.simpleframework.xml.Root;
 
@@ -57,6 +60,138 @@ public class OrionSettings {
 
     @ElementList(required = false)
     private List<OrionRailSettings> railSettings = new ArrayList<>();
+
+    public enum IdentifyMethod {
+        Off("Off (leave ambiguous feeders unresolved)"),
+        Fiber("Fiber light"),
+        TapeMovement("Tape movement"),
+        FiberThenTape("Fiber light, tape movement as fallback");
+
+        private final String label;
+
+        IdentifyMethod(String label) {
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    public enum UnverifiedPolicy {
+        Off("Don't check"),
+        Warn("Warn (job still runs)"),
+        Block("Block the job");
+
+        private final String label;
+
+        UnverifiedPolicy(String label) {
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    @Attribute(required = false)
+    private IdentifyMethod identifyMethod = IdentifyMethod.FiberThenTape;
+
+    @Attribute(required = false)
+    private UnverifiedPolicy unverifiedPolicy = UnverifiedPolicy.Warn;
+
+    /** Peak brightness increase (gray levels, 0..255) that counts as "fiber is on". */
+    @Attribute(required = false)
+    private double fiberThreshold = 40;
+
+    /** Changed pixel count that counts as "the tape moved". */
+    @Attribute(required = false)
+    private double movementThreshold = 150;
+
+    /** How far the tape is moved back for the movement check, mm. */
+    @Attribute(required = false)
+    private double movementMm = 0.5;
+
+    @Attribute(required = false)
+    private int settleMs = 150;
+
+    @Element(required = false)
+    private CvPipeline fiberPipeline;
+
+    @Element(required = false)
+    private CvPipeline movementPipeline;
+
+    public IdentifyMethod getIdentifyMethod() {
+        return identifyMethod;
+    }
+
+    public void setIdentifyMethod(IdentifyMethod m) {
+        identifyMethod = m;
+    }
+
+    public UnverifiedPolicy getUnverifiedPolicy() {
+        return unverifiedPolicy;
+    }
+
+    public void setUnverifiedPolicy(UnverifiedPolicy p) {
+        unverifiedPolicy = p;
+    }
+
+    public double getFiberThreshold() {
+        return fiberThreshold;
+    }
+
+    public void setFiberThreshold(double v) {
+        fiberThreshold = v;
+    }
+
+    public double getMovementThreshold() {
+        return movementThreshold;
+    }
+
+    public void setMovementThreshold(double v) {
+        movementThreshold = v;
+    }
+
+    public double getMovementMm() {
+        return movementMm;
+    }
+
+    public void setMovementMm(double v) {
+        movementMm = v;
+    }
+
+    public int getSettleMs() {
+        return settleMs;
+    }
+
+    public void setSettleMs(int v) {
+        settleMs = v;
+    }
+
+    public synchronized CvPipeline getFiberPipeline() {
+        if (fiberPipeline == null) {
+            fiberPipeline = OrionPipelines.defaultFiberPipeline();
+        }
+        return fiberPipeline;
+    }
+
+    public synchronized CvPipeline getMovementPipeline() {
+        if (movementPipeline == null) {
+            movementPipeline = OrionPipelines.defaultMovementPipeline();
+        }
+        return movementPipeline;
+    }
+
+    public synchronized void resetFiberPipeline() {
+        fiberPipeline = OrionPipelines.defaultFiberPipeline();
+    }
+
+    public synchronized void resetMovementPipeline() {
+        movementPipeline = OrionPipelines.defaultMovementPipeline();
+    }
 
     public String getLargeFiducialPartId() {
         return largeFiducialPartId;

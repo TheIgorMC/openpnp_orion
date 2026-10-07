@@ -15,7 +15,12 @@ import org.openpnp.machine.orion.protocol.OrionException;
 import org.openpnp.machine.orion.protocol.OrionTransport;
 import org.openpnp.machine.orion.protocol.SerialRs485Transport;
 import org.openpnp.machine.orion.protocol.SimulatedOrionTransport;
+import org.opencv.core.Mat;
+import org.openpnp.machine.orion.vision.OrionIdentifier;
+import org.openpnp.machine.orion.vision.OrionPipelines;
 import org.openpnp.machine.orion.vision.OrionRailScanner;
+import org.openpnp.model.LengthUnit;
+import org.openpnp.spi.Camera;
 import org.openpnp.machine.orion.vision.OrionVisionFinder;
 import org.openpnp.model.Configuration;
 import org.openpnp.model.Location;
@@ -330,6 +335,223 @@ public class OrionManager {
         return locate(serial, railHint);
     }
 
+
+    // ------------------------------------------------------------------ "was the rail verified?"
+
+    /** Outcome of the last vision verify of a rail. */
+    public static class RailCheck {
+        public final long time = System.currentTimeMillis();
+        public final boolean clean;
+        public final String summary;
+        final String signature;
+
+        RailCheck(boolean clean, String summary, String signature) {
+            this.clean = clean;
+            this.summary = summary;
+            this.signature = signature;
+        }
+    }
+
+    private final java.util.Map<Integer, RailCheck> checks = new java.util.HashMap<>();
+    private final java.util.Map<Integer, Long> lastWarned = new java.util.HashMap<>();
+
+    private static String signature(OrionBus bus) {
+        List<String> l = new ArrayList<>();
+        for (OrionDeviceInfo d : bus.getDevices()) {
+            if (d.state != OrionDeviceInfo.State.LOST) {
+                l.add(d.serial + "|" + d.slotXMm);
+            }
+        }
+        java.util.Collections.sort(l);
+        return String.join(",", l);
+    }
+
+    /** Remember the outcome of a vision verify of the rail (also the bus state it was done against). */
+    public synchronized void recordRailCheck(int rail, boolean clean, String summary) {
+        OrionBus bus = getBus(rail);
+        checks.put(rail, new RailCheck(clean, summary, bus == null ? "" : signature(bus)));
+    }
+
+    public synchronized void clearRailChecks() {
+        checks.clear();
+        lastWarned.clear();
+    }
+
+    public synchronized RailCheck getRailCheck(int rail) {
+        return checks.get(rail);
+    }
+
+    /**
+     * Why the rail cannot be trusted for a job right now, or null if its last vision verify was clean
+     * and nothing on the bus changed since.
+     */
+    public synchronized String railCheckProblem(int rail) {
+        RailCheck c = checks.get(rail);
+        if (c == null) {
+            return "Rail " + (rail + 1) + " has not been checked by vision since the program started "
+                    + "(Orion Bus Manager > Verify rail). Feeder locations may be off.";
+        }
+        if (!c.clean) {
+            return "The last vision check of rail " + (rail + 1) + " found problems: " + c.summary;
+        }
+        OrionBus bus = getBus(rail);
+        if (bus != null && !signature(bus).equals(c.signature)) {
+            return "The feeders on rail " + (rail + 1) + " changed since it was last checked by vision.";
+        }
+        return null;
+    }
+
+    /** Once per minute per rail, so a job preparing 30 feeders shows a single dialog. */
+    synchronized boolean shouldShowWarning(int rail) {
+        long now = System.currentTimeMillis();
+        Long last = lastWarned.get(rail);
+        if (last != null && now - last < 60000) {
+            return false;
+        }
+        lastWarned.put(rail, now);
+        return true;
+    }
+
+    // ------------------------------------------------------------------ fiber / tape identification
+
+    private static Camera headCamera() throws Exception {
+        return Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
+    }
+
+    private static OrionFeeder feederOf(OrionRailScanner.Target t) {
+        return (OrionFeeder) t.tag;
+    }
+
+    /** Identifier used by the rail scan for fiducials that cannot be matched to a unit directly. */
+    private OrionRailScanner.Identifier buildIdentifier(int rail, OrionRailSettings rs) {
+        final OrionSettings st = getSettings();
+        final OrionSettings.IdentifyMethod method = st.getIdentifyMethod();
+        if (method == OrionSettings.IdentifyMethod.Off) {
+            return null;
+        }
+        return new OrionRailScanner.Identifier() {
+            public String method() {
+                return method.toString();
+            }
+
+            public OrionRailScanner.Target identify(Location fiducial, List<OrionRailScanner.Target> pending)
+                    throws Exception {
+                Camera cam = headCamera();
+                if (method != OrionSettings.IdentifyMethod.TapeMovement) {
+                    Location spot = fiducial.add(new Location(LengthUnit.Millimeters,
+                            rs.getFiberOffsetX(), rs.getFiberOffsetY(), 0, 0));
+                    org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, spot);
+                    OrionRailScanner.Target hit = OrionIdentifier.search(pending,
+                            fiberProbe(pending, cam), line -> addLog(rail, OrionBusListener.Direction.INFO,
+                                    "identify: " + line));
+                    if (hit != null || method == OrionSettings.IdentifyMethod.Fiber) {
+                        return hit;
+                    }
+                    addLog(rail, OrionBusListener.Direction.INFO,
+                            "identify: fiber light inconclusive, trying tape movement");
+                }
+                Location hole = fiducial.add(new Location(LengthUnit.Millimeters,
+                        rs.getHoleOffsetX(), rs.getHoleOffsetY(), 0, 0));
+                org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, hole);
+                return OrionIdentifier.search(pending, movementProbe(cam),
+                        line -> addLog(rail, OrionBusListener.Direction.INFO, "identify: " + line));
+            }
+        };
+    }
+
+    private OrionIdentifier.Probe<OrionRailScanner.Target> fiberProbe(
+            List<OrionRailScanner.Target> all, Camera cam) {
+        final OrionSettings st = getSettings();
+        final java.util.Set<OrionRailScanner.Target> lit = new java.util.HashSet<>();
+        OrionIdentifier.Fibers<OrionRailScanner.Target> fibers = (on, every) -> {
+            for (OrionRailScanner.Target t : every) {
+                boolean want = on.contains(t);
+                if (want != lit.contains(t)) {
+                    feederOf(t).setFiber(want);
+                    if (want) {
+                        lit.add(t);
+                    } else {
+                        lit.remove(t);
+                    }
+                }
+            }
+        };
+        OrionIdentifier.Metric metric = () -> {
+            Mat m = OrionPipelines.grab(st.getFiberPipeline(), cam);
+            try {
+                return OrionPipelines.peak(m);
+            } finally {
+                m.release();
+            }
+        };
+        return new OrionIdentifier.FiberProbe<>(all, fibers, metric, st.getFiberThreshold(),
+                st.getSettleMs());
+    }
+
+    private OrionIdentifier.Probe<OrionRailScanner.Target> movementProbe(Camera cam) {
+        final OrionSettings st = getSettings();
+        final int tenths = Math.max(1, (int) Math.round(st.getMovementMm() * 10));
+        OrionIdentifier.Mover<OrionRailScanner.Target> mover = (units, back) -> {
+            for (OrionRailScanner.Target t : units) {
+                feederOf(t).jogTenthsMm(back ? -tenths : tenths);
+            }
+        };
+        OrionIdentifier.FrameSource frames = new OrionIdentifier.FrameSource() {
+            public Object snap() throws Exception {
+                return OrionPipelines.grab(st.getMovementPipeline(), cam);
+            }
+
+            public double difference(Object a, Object b) {
+                double d = OrionPipelines.changedPixels((Mat) a, (Mat) b);
+                ((Mat) a).release();
+                ((Mat) b).release();
+                return d;
+            }
+        };
+        return new OrionIdentifier.MovementProbe<>(mover, frames, st.getMovementThreshold(),
+                st.getSettleMs());
+    }
+
+    /** Tuning helper: measure the fiber spot with the unit's fiber off and on. Camera must already be over the spot. */
+    public double[] testFiber(OrionFeeder feeder) throws Exception {
+        OrionSettings st = getSettings();
+        Camera cam = headCamera();
+        try {
+            feeder.setFiber(false);
+            Thread.sleep(st.getSettleMs());
+            Mat a = OrionPipelines.grab(st.getFiberPipeline(), cam);
+            double off = OrionPipelines.peak(a);
+            a.release();
+            feeder.setFiber(true);
+            Thread.sleep(st.getSettleMs());
+            Mat b = OrionPipelines.grab(st.getFiberPipeline(), cam);
+            double on = OrionPipelines.peak(b);
+            b.release();
+            return new double[] {off, on, on - off, st.getFiberThreshold()};
+        } finally {
+            feeder.setFiber(false);
+        }
+    }
+
+    /** Tuning helper: move the unit's tape back a bit, count changed pixels in the hole mask, move it forward again. */
+    public double[] testMovement(OrionFeeder feeder) throws Exception {
+        OrionSettings st = getSettings();
+        Camera cam = headCamera();
+        int tenths = Math.max(1, (int) Math.round(st.getMovementMm() * 10));
+        Mat a = OrionPipelines.grab(st.getMovementPipeline(), cam);
+        feeder.jogTenthsMm(-tenths);
+        try {
+            Thread.sleep(st.getSettleMs());
+            Mat b = OrionPipelines.grab(st.getMovementPipeline(), cam);
+            double changed = OrionPipelines.changedPixels(a, b);
+            b.release();
+            return new double[] {changed, st.getMovementThreshold()};
+        } finally {
+            a.release();
+            feeder.jogTenthsMm(tenths);
+        }
+    }
+
     // ------------------------------------------------------------------ vision verify / rescan
 
     /**
@@ -371,13 +593,15 @@ public class OrionManager {
                 slotShift = d.slotXMm - of.getTaughtSlotXMm();
             }
             final OrionDeviceInfo dd = d;
-            targets.add(new OrionRailScanner.Target(of.getName(), of.getFiducialNominalOrDefault(rs),
+            OrionRailScanner.Target tgt = new OrionRailScanner.Target(of.getName(), of.getFiducialNominalOrDefault(rs),
                     d != null && d.state != OrionDeviceInfo.State.LOST, slotShift, found -> {
                         if (dd != null) {
                             of.setCurrentSlotXMm(dd.slotXMm);
                         }
                         of.applyFoundFiducial(found, rs);
-                    }));
+                    });
+            tgt.tag = of;
+            targets.add(tgt);
         }
         OrionRailScanner.Params p = new OrionRailScanner.Params();
         p.xMin = rs.getXMin();
@@ -390,7 +614,13 @@ public class OrionManager {
         p.maxShiftMm = rs.getMaxShiftMm();
         p.autoRescan = rs.isAutoRescan();
         OrionRailScanner.Result r = new OrionRailScanner(p, new OrionVisionFinder(part), progress)
-                .run(targets);
+                .withIdentifier(buildIdentifier(rail, rs)).run(targets);
+        boolean clean = true;
+        for (OrionRailScanner.Target t : r.targets) {
+            clean &= t.state == OrionRailScanner.State.OK || t.state == OrionRailScanner.State.SHIFTED
+                    || t.state == OrionRailScanner.State.RELOCATED;
+        }
+        recordRailCheck(rail, clean, r.summary());
         for (String line : r.log) {
             addLog(rail, OrionBusListener.Direction.INFO, "vision: " + line);
         }

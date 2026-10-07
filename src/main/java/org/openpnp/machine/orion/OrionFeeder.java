@@ -293,6 +293,12 @@ public class OrionFeeder extends ReferenceFeeder {
         l.bus.peelCalibrated(l.address(), reverse);
     }
 
+    /** Fiber (second) LED on/off, used for identification and for tuning the light detection. */
+    public void setFiber(boolean on) throws Exception {
+        Link l = link();
+        l.bus.setFiberLed(l.address(), on);
+    }
+
     public void stop() throws Exception {
         Link l = link();
         l.bus.stop(l.address());
@@ -433,7 +439,51 @@ public class OrionFeeder extends ReferenceFeeder {
     public void prepareForJob(boolean visit) throws Exception {
         visionDelta = null;
         visionDoneThisJob = false;
+        checkRailVerified();
         super.prepareForJob(visit);
+    }
+
+    /** Warn (or block) when the rail was not checked by vision, so a bad location does not fail the job later. */
+    private void checkRailVerified() throws Exception {
+        OrionManager mgr = OrionManager.get();
+        OrionSettings.UnverifiedPolicy policy = mgr.getSettings().getUnverifiedPolicy();
+        if (policy == OrionSettings.UnverifiedPolicy.Off || serial == null) {
+            return;
+        }
+        String problem = mgr.railCheckProblem(rail);
+        if (problem == null) {
+            return;
+        }
+        String msg = "Orion feeder '" + getName() + "': " + problem;
+        Logger.warn(msg);
+        mgr.addLog(rail, org.openpnp.machine.orion.protocol.OrionBusListener.Direction.ERROR, msg);
+        if (policy == OrionSettings.UnverifiedPolicy.Block) {
+            throw new Exception(msg);
+        }
+        if (!java.awt.GraphicsEnvironment.isHeadless() && mgr.shouldShowWarning(rail)) {
+            javax.swing.SwingUtilities.invokeLater(() -> javax.swing.JOptionPane.showMessageDialog(
+                    org.openpnp.gui.MainFrame.get(), problem + "\n\nThe job continues, but picks from "
+                            + "feeders on this rail may miss.", "Orion: rail not verified",
+                    javax.swing.JOptionPane.WARNING_MESSAGE));
+        }
+    }
+
+    @Override
+    public void findIssues(org.openpnp.model.Solutions solutions) {
+        super.findIssues(solutions);
+        OrionSettings.UnverifiedPolicy policy = OrionManager.get().getSettings().getUnverifiedPolicy();
+        if (serial == null || policy == OrionSettings.UnverifiedPolicy.Off) {
+            return;
+        }
+        String problem = OrionManager.get().railCheckProblem(rail);
+        if (problem != null) {
+            solutions.add(new org.openpnp.model.Solutions.PlainIssue(this,
+                    "Orion rail " + (rail + 1) + " not verified: " + problem,
+                    "Open the Orion Bus Manager tab of any Orion feeder and press \"Verify rail (vision)\".",
+                    policy == OrionSettings.UnverifiedPolicy.Block ? org.openpnp.model.Solutions.Severity.Error
+                            : org.openpnp.model.Solutions.Severity.Warning,
+                    "https://github.com/TheIgorMC/orionPnP"));
+        }
     }
 
     // ------------------------------------------------------------------ vision
