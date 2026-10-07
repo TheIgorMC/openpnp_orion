@@ -109,6 +109,10 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         live.add(button("Peel", "Peel motor forward for the calibrated time", () -> feeder.peel(false)));
         live.add(button("Unpeel", "Peel motor in reverse for the calibrated time", () -> feeder.peel(true)));
         live.add(button("Stop", "Brake both motors", () -> feeder.stop()));
+        contentPanel.add(live);
+        JPanel jog = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        jog.setBorder(BorderFactory.createTitledBorder("Sprocket jog / tape zero"));
+        live = jog;
         live.add(button("Jog -1 mm", null, () -> feeder.jogTenthsMm(-10)));
         live.add(button("Jog +1 mm", null, () -> feeder.jogTenthsMm(10)));
         live.add(button("Jog -0.1", null, () -> feeder.jogTenthsMm(-1)));
@@ -121,6 +125,9 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         ));
         live.add(read);
         contentPanel.add(live);
+        for (java.awt.Component c : contentPanel.getComponents()) {
+            OrionUi.compact((javax.swing.JComponent) c);
+        }
 
         locationPanel.setBaseLocation(feeder.getLocation());
         OrionManager.get().addListener(this);

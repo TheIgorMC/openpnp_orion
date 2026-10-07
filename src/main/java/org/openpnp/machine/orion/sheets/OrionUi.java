@@ -64,13 +64,21 @@ final class OrionUi {
         r.gridx = 1;
         r.gridy = row;
         r.weightx = 1;
-        r.fill = GridBagConstraints.HORIZONTAL;
+        r.fill = GridBagConstraints.NONE;
         r.anchor = GridBagConstraints.LINE_START;
         r.insets = new Insets(2, 0, 2, 4);
         p.add(c, r);
+    }
+
+    /** Keep a panel at its natural height inside a vertical BoxLayout. */
+    static void compact(javax.swing.JComponent c) {
+        c.setAlignmentX(Component.LEFT_ALIGNMENT);
+        java.awt.Dimension d = c.getPreferredSize();
+        c.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, d.height));
     }
 
     static JPanel grid() {
         return new JPanel(new GridBagLayout());
     }
 }
+

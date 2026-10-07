@@ -27,6 +27,7 @@ public class OrionBus {
     private final List<OrionBusListener> listeners = new CopyOnWriteArrayList<>();
     private final Map<Integer, OrionDeviceInfo> devices = new TreeMap<>();
 
+    private boolean quiet;
     private int retries = 2;
     private int maxAddress = 40;
 
@@ -74,8 +75,10 @@ public class OrionBus {
     /** Send a frame and return every valid reply. Single attempt, no retry. */
     public synchronized List<OrionFrame> exchange(OrionFrame request, int timeoutMs, int collectMs)
             throws OrionException {
-        log(OrionBusListener.Direction.TX,
-                OrionCommand.name(request.command) + " " + request);
+        if (!quiet) {
+            log(OrionBusListener.Direction.TX,
+                    OrionCommand.name(request.command) + " " + request);
+        }
         List<OrionFrame> replies;
         try {
             replies = transport.exchange(rail, request, timeoutMs, collectMs);
@@ -213,23 +216,29 @@ public class OrionBus {
      */
     public synchronized int scan(ScanProgress progress) throws OrionException {
         Set<Integer> seen = new HashSet<>();
-        for (int a = 1; a <= maxAddress; a++) {
-            if (progress != null) {
-                progress.update("Probing addresses", a, maxAddress);
-            }
-            try {
-                OrionFrame req = new OrionFrame(a, OrionCommand.PING);
-                List<OrionFrame> replies = exchange(req, 40, 0);
-                for (OrionFrame r : replies) {
-                    if (r.command == OrionCommand.PONG && r.address == a) {
-                        seen.add(a);
+        log(OrionBusListener.Direction.INFO, "Probing addresses 1.." + maxAddress);
+        quiet = true; // 40 silent PINGs would drown the log; replies are still logged
+        try {
+            for (int a = 1; a <= maxAddress; a++) {
+                if (progress != null) {
+                    progress.update("Probing addresses", a, maxAddress);
+                }
+                try {
+                    OrionFrame req = new OrionFrame(a, OrionCommand.PING);
+                    List<OrionFrame> replies = exchange(req, 40, 0);
+                    for (OrionFrame r : replies) {
+                        if (r.command == OrionCommand.PONG && r.address == a) {
+                            seen.add(a);
+                        }
+                    }
+                } catch (OrionException e) {
+                    if (e.kind == OrionException.Kind.TRANSPORT) {
+                        throw e;
                     }
                 }
-            } catch (OrionException e) {
-                if (e.kind == OrionException.Kind.TRANSPORT) {
-                    throw e;
-                }
             }
+        } finally {
+            quiet = false;
         }
         for (int a : seen) {
             try {
