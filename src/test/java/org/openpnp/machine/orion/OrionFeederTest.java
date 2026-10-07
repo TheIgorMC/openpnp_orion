@@ -260,4 +260,13 @@ public class OrionFeederTest {
             assertTrue(names.add(f.getName()), "unique name " + f.getName());
         }
     }
+
+    @Test
+    void bootstrapNeedsNoExistingFeeder() throws Exception {
+        assertEquals(0, machine.getFeeders().stream().filter(f -> f instanceof OrionFeeder).count());
+        String msg = mgr.bootstrap();
+        assertTrue(msg.contains("6 unit(s)") && msg.contains("6 new feeder(s)"), msg);
+        assertEquals(6, machine.getFeeders().stream().filter(f -> f instanceof OrionFeeder).count());
+        assertTrue(mgr.bootstrap().contains("0 new feeder(s)"), "second run creates nothing");
+    }
 }

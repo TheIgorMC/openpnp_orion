@@ -140,6 +140,9 @@ public class OrionManager {
                     connectIfNeeded();
                     for (OrionBus b : getBuses()) {
                         b.scan(null);
+                        if (getSettings().isAutoCreateFeeders()) {
+                            createFeedersForUnbound(b.getRail());
+                        }
                     }
                     refresh();
                     return null;
@@ -588,6 +591,42 @@ public class OrionManager {
         addLog(rail, OrionBusListener.Direction.INFO, "Created " + created.size() + " feeder(s)");
         refresh();
         return created;
+    }
+
+    /**
+     * The one-step setup: connect, scan every rail, create a feeder for each unit that has none.
+     * Needs no existing OrionFeeder. Returns a one-line summary.
+     */
+    public String bootstrap() throws Exception {
+        connectIfNeeded();
+        int units = 0;
+        int created = 0;
+        for (OrionBus b : getBuses()) {
+            b.scan(null);
+            for (OrionDeviceInfo d : b.getDevices()) {
+                if (d.state != OrionDeviceInfo.State.LOST) {
+                    units++;
+                }
+            }
+            created += createFeedersForUnbound(b.getRail()).size();
+        }
+        String msg = String.format("%d unit(s) on %d rail(s), %d new feeder(s) created", units,
+                getRailCount(), created);
+        addLog(0, OrionBusListener.Direction.INFO, "bootstrap: " + msg);
+        return msg;
+    }
+
+    /** Verify every rail that has its vision scan set up. Returns one summary line per rail. */
+    public List<String> verifyAllRails(OrionRailScanner.Progress progress) throws Exception {
+        List<String> out = new ArrayList<>();
+        for (OrionBus b : getBuses()) {
+            if (!getSettings().getRailSettings(b.getRail()).isConfigured()) {
+                out.add("Rail " + (b.getRail() + 1) + ": vision scan not set up (X range empty), skipped");
+                continue;
+            }
+            out.add("Rail " + (b.getRail() + 1) + ": " + verifyRail(b.getRail(), progress).summary());
+        }
+        return out;
     }
 
     private static String uniqueName(String base) {

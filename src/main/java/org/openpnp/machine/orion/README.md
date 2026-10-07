@@ -28,10 +28,18 @@ bus connects and scans when the machine is enabled. Otherwise it connects on fir
 
 Like every OpenPnP feeder, each physical Orion feeder is its own `OrionFeeder` object in the machine's
 feeder list, bound to its unit by serial number (own part, pick location, pitch, peel settings).
-Bootstrap: add one OrionFeeder by hand (it stays unbound) to reach the machine-wide Bus Manager tab,
-connect and scan, then **Create feeders for all unbound** makes one feeder per unit that has none
-(ordered by slot X, never duplicating a bound unit), and you assign a part to each. The first
-hand-made placeholder can be bound to a unit with *Bind to unit...* or deleted.
+The orchestrator is `OrionManager` (one per program): it owns the connection, the rails and the
+unit table, and creates the feeder objects. Entry points that need no existing feeder:
+
+* Main menu **Orion**: *Bus manager and debug...* (window with the Bus Manager and Debug tabs),
+  *Connect, scan and create all feeders* (one step), *Verify all rails by vision*.
+* Automatically: when the machine is enabled it connects, scans and (option, default on) creates a
+  feeder for every unit that has none.
+* Bus Manager rail tab: *Create feeders for all unbound* (that rail) or *Create feeder* (selected unit).
+
+New feeders are named `Orion R1-xxxx`, bound by serial, ordered by slot X, never duplicating a bound
+unit. Assign a part to each in the Feeders tab. The per-feeder tabs (Orion Feeder, Bus Manager, Debug)
+remain on every feeder as well.
 
 ## Interfaces
 

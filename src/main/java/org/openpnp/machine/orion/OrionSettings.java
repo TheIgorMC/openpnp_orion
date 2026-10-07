@@ -54,6 +54,10 @@ public class OrionSettings {
     @Attribute(required = false)
     private boolean connectOnEnable = true;
 
+    /** After each scan on machine enable, create an OpenPnP feeder for every unit that has none. */
+    @Attribute(required = false)
+    private boolean autoCreateFeeders = true;
+
     /** The large fiducial (middle one of each feeder's set) used to find feeders on the rail. */
     @Attribute(required = false)
     private String largeFiducialPartId = "";
@@ -278,6 +282,14 @@ public class OrionSettings {
 
     public void setRetries(int retries) {
         this.retries = retries;
+    }
+
+    public boolean isAutoCreateFeeders() {
+        return autoCreateFeeders;
+    }
+
+    public void setAutoCreateFeeders(boolean v) {
+        autoCreateFeeders = v;
     }
 
     public boolean isConnectOnEnable() {

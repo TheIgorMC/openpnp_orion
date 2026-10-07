@@ -518,6 +518,7 @@ public class MainFrame extends JFrame {
         mnScripts = new JMenu(Translations.getString("Menu.Scripts")); //$NON-NLS-1$
         mnScripts.setMnemonic(KeyEvent.VK_S);
         menuBar.add(mnScripts);
+        menuBar.add(org.openpnp.machine.orion.sheets.OrionMenu.create());
 
         // Windows
         /////////////////////////////////////////////////////////////////////

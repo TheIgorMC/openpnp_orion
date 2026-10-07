@@ -102,6 +102,10 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                 s.isConnectOnEnable());
         auto.addActionListener(e -> s.setConnectOnEnable(auto.isSelected()));
         OrionUi.row(p, 5, "", auto);
+        JCheckBox autoCreate = new JCheckBox("...and create a feeder for every unit that has none",
+                s.isAutoCreateFeeders());
+        autoCreate.addActionListener(e -> s.setAutoCreateFeeders(autoCreate.isSelected()));
+        OrionUi.row(p, 9, "", autoCreate);
 
         JComboBox<org.openpnp.model.Part> fid = new JComboBox<>(new org.openpnp.gui.support.PartsComboBoxModel());
         fid.setRenderer(new org.openpnp.gui.support.IdentifiableListCellRenderer<org.openpnp.model.Part>());
