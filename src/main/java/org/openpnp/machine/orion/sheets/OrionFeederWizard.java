@@ -49,6 +49,17 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
     private final JTextField rotTf = new JTextField(8);
     private final LocationButtonsPanel locationPanel;
 
+    private final JComboBox<OrionFeeder.VisionMode> visionModeCb = new JComboBox<>(
+            OrionFeeder.VisionMode.values());
+    private final JComboBox<Part> fiducialPartCb = new JComboBox<>();
+    private final javax.swing.JCheckBox xOnlyCb = new javax.swing.JCheckBox("Only correct X");
+    private final JTextField maxCorrTf = new JTextField(6);
+    private final JTextField fxTf = new JTextField(8);
+    private final JTextField fyTf = new JTextField(8);
+    private final JTextField fzTf = new JTextField(8);
+    private final LocationButtonsPanel fiducialPanel;
+    private final JLabel visionResult = new JLabel(" ");
+
     public OrionFeederWizard(OrionFeeder feeder) {
         this.feeder = feeder;
         contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
@@ -99,6 +110,43 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         locationPanel = new LocationButtonsPanel(xTf, yTf, zTf, rotTf);
         loc.add(locationPanel);
         contentPanel.add(loc);
+
+        // ---- vision
+        JPanel vis = OrionUi.grid();
+        vis.setBorder(BorderFactory.createTitledBorder("Vision: fine X position from a fiducial"));
+        fiducialPartCb.setModel(new PartsComboBoxModel());
+        fiducialPartCb.setRenderer(new IdentifiableListCellRenderer<Part>());
+        OrionUi.row(vis, 0, "When", visionModeCb);
+        OrionUi.row(vis, 1, "Fiducial part (its vision settings are used)", fiducialPartCb);
+        JPanel fl = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        fl.add(new JLabel("X"));
+        fl.add(fxTf);
+        fl.add(new JLabel("Y"));
+        fl.add(fyTf);
+        fl.add(new JLabel("Z"));
+        fl.add(fzTf);
+        fiducialPanel = new LocationButtonsPanel(fxTf, fyTf, fzTf, new JTextField());
+        fl.add(fiducialPanel);
+        OrionUi.row(vis, 2, "Fiducial location (taught with the pick location)", fl);
+        OrionUi.row(vis, 3, "", xOnlyCb);
+        OrionUi.row(vis, 4, "Reject corrections larger than (mm)", maxCorrTf);
+        JPanel vb = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        JButton locate = new JButton("Locate fiducial now");
+        locate.addActionListener(e -> OrionUi.run("Locate fiducial", () -> feeder.locateByFiducial(),
+                d -> visionResult.setText(String.format("Correction dX=%.3f dY=%.3f mm (not yet permanent)",
+                        d.getX(), d.getY()))));
+        vb.add(locate);
+        JButton commit = new JButton("Make correction permanent");
+        commit.setToolTipText("Move the taught pick location and fiducial position by the last correction");
+        commit.addActionListener(e -> {
+            feeder.commitVisionCorrection();
+            visionResult.setText("Correction applied to the pick location.");
+            loadFromModel();
+        });
+        vb.add(commit);
+        vb.add(visionResult);
+        OrionUi.row(vis, 5, "", vb);
+        contentPanel.add(vis);
 
         // ---- live controls
         JPanel live = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
@@ -244,6 +292,17 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         bind(UpdateStrategy.READ_WRITE, location, "lengthZ", zTf, "text", lengthConverter);
         bind(UpdateStrategy.READ_WRITE, location, "rotation", rotTf, "text", doubleConverter);
         bind(UpdateStrategy.READ, location, "location", locationPanel, "baseLocation");
+
+        addWrappedBinding(feeder, "visionMode", visionModeCb, "selectedItem");
+        addWrappedBinding(feeder, "fiducialPart", fiducialPartCb, "selectedItem");
+        addWrappedBinding(feeder, "visionXOnly", xOnlyCb, "selected");
+        addWrappedBinding(feeder, "maxCorrectionMm", maxCorrTf, "text", plain);
+        MutableLocationProxy fid = new MutableLocationProxy();
+        addWrappedBinding(feeder, "fiducialNominal", fid, "location");
+        bind(UpdateStrategy.READ_WRITE, fid, "lengthX", fxTf, "text", lengthConverter);
+        bind(UpdateStrategy.READ_WRITE, fid, "lengthY", fyTf, "text", lengthConverter);
+        bind(UpdateStrategy.READ_WRITE, fid, "lengthZ", fzTf, "text", lengthConverter);
+        bind(UpdateStrategy.READ, fid, "location", fiducialPanel, "baseLocation");
     }
 
     @Override

@@ -5,6 +5,13 @@ import java.util.List;
 
 import javax.swing.Action;
 
+import org.openpnp.machine.reference.vision.ReferenceFiducialLocator;
+import org.openpnp.model.Configuration;
+import org.openpnp.model.LengthUnit;
+import org.openpnp.model.Part;
+import org.openpnp.spi.FiducialLocator;
+import org.simpleframework.xml.Element;
+
 import org.openpnp.gui.support.Wizard;
 import org.openpnp.machine.orion.protocol.OrionBus;
 import org.openpnp.machine.orion.protocol.OrionDeviceInfo;
@@ -52,10 +59,58 @@ public class OrionFeeder extends ReferenceFeeder {
     @Attribute(required = false)
     protected int feedRetries = 2;
 
+    // ---- vision (fiducial based fine X position)
+
+    public enum VisionMode {
+        Off("Off"),
+        FirstFeedOfJob("On the first feed of each job"),
+        EveryFeed("Before every feed");
+
+        private final String label;
+
+        VisionMode(String label) {
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    @Attribute(required = false)
+    protected VisionMode visionMode = VisionMode.Off;
+
+    /** A fiducial part (with its own vision settings / pipeline) marking this feeder's true position. */
+    @Attribute(required = false)
+    protected String fiducialPartId;
+
+    /** Where the fiducial was when the pick location was taught. */
+    @Element(required = false)
+    protected Location fiducialNominal;
+
+    /** Only correct X (the feeder can only shift along the rail). */
+    @Attribute(required = false)
+    protected boolean visionXOnly = true;
+
+    /** Corrections bigger than this are rejected as a bad detection. */
+    @Attribute(required = false)
+    protected double maxCorrectionMm = 2.0;
+
+    /** Correction found by the last detection, added to the taught pick location. Not persisted. */
+    private transient Location visionDelta;
+    private transient boolean visionDoneThisJob;
+
     /** Set once this session's settings have been pushed to the unit. */
     private transient String configuredForSerialAddress;
 
     public OrionFeeder() {
+        Configuration.get().addListener(new org.openpnp.ConfigurationListener.Adapter() {
+            @Override
+            public void configurationComplete(Configuration configuration) {
+                OrionManager.get().hookMachine(configuration.getMachine());
+            }
+        });
     }
 
     // ------------------------------------------------------------------ properties
@@ -292,12 +347,129 @@ public class OrionFeeder extends ReferenceFeeder {
             case Disable:
                 return;
         }
+        refineByVisionIfNeeded();
         runMove(Move.FEED);
     }
 
     @Override
     public Location getPickLocation() throws Exception {
+        if (visionDelta != null) {
+            return location.add(visionDelta);
+        }
         return location;
+    }
+
+    @Override
+    public void prepareForJob(boolean visit) throws Exception {
+        visionDelta = null;
+        visionDoneThisJob = false;
+        super.prepareForJob(visit);
+    }
+
+    // ------------------------------------------------------------------ vision
+
+    public VisionMode getVisionMode() {
+        return visionMode;
+    }
+
+    public void setVisionMode(VisionMode visionMode) {
+        this.visionMode = visionMode;
+    }
+
+    public Part getFiducialPart() {
+        return fiducialPartId == null ? null : Configuration.get().getPart(fiducialPartId);
+    }
+
+    public void setFiducialPart(Part part) {
+        this.fiducialPartId = part == null ? null : part.getId();
+    }
+
+    public Location getFiducialNominal() {
+        return fiducialNominal;
+    }
+
+    public void setFiducialNominal(Location fiducialNominal) {
+        this.fiducialNominal = fiducialNominal;
+    }
+
+    public boolean isVisionXOnly() {
+        return visionXOnly;
+    }
+
+    public void setVisionXOnly(boolean visionXOnly) {
+        this.visionXOnly = visionXOnly;
+    }
+
+    public double getMaxCorrectionMm() {
+        return maxCorrectionMm;
+    }
+
+    public void setMaxCorrectionMm(double maxCorrectionMm) {
+        this.maxCorrectionMm = maxCorrectionMm;
+    }
+
+    public Location getVisionDelta() {
+        return visionDelta;
+    }
+
+    /**
+     * Look for the fiducial at its nominal position and compute how far it moved. The correction is
+     * stored in {@link #visionDelta} and applied by {@link #getPickLocation()}.
+     *
+     * @return the correction (mm) or throws if the detection failed or is implausible.
+     */
+    public Location locateByFiducial() throws Exception {
+        Part part = getFiducialPart();
+        if (part == null || fiducialNominal == null) {
+            throw new Exception("Feeder '" + getName() + "': set a fiducial part and its nominal location "
+                    + "before using vision.");
+        }
+        FiducialLocator locator = Configuration.get().getMachine().getFiducialLocator();
+        Location found;
+        if (locator instanceof ReferenceFiducialLocator) {
+            found = ((ReferenceFiducialLocator) locator).getFiducialLocation(fiducialNominal, part);
+        } else {
+            found = locator.getHomeFiducialLocation(fiducialNominal, part);
+        }
+        if (found == null) {
+            throw new Exception("Feeder '" + getName() + "': fiducial '" + part.getId() + "' not found.");
+        }
+        Location nominalMm = fiducialNominal.convertToUnits(LengthUnit.Millimeters);
+        Location foundMm = found.convertToUnits(LengthUnit.Millimeters);
+        double dx = foundMm.getX() - nominalMm.getX();
+        double dy = visionXOnly ? 0 : foundMm.getY() - nominalMm.getY();
+        if (Math.hypot(dx, dy) > maxCorrectionMm) {
+            throw new Exception(String.format("Feeder '%s': fiducial found %.2f mm away from where it "
+                    + "should be (limit %.2f mm). Check the feeder is seated, or raise the limit.",
+                    getName(), Math.hypot(dx, dy), maxCorrectionMm));
+        }
+        visionDelta = new Location(LengthUnit.Millimeters, dx, dy, 0, 0);
+        Logger.info("Orion feeder {}: fiducial correction dx={} dy={}", getName(), dx, dy);
+        return visionDelta;
+    }
+
+    /** Make the current vision correction permanent: move the taught pick X and fiducial position. */
+    public void commitVisionCorrection() {
+        if (visionDelta == null) {
+            return;
+        }
+        setLocation(location.add(visionDelta));
+        fiducialNominal = fiducialNominal.add(visionDelta);
+        visionDelta = null;
+    }
+
+    private void refineByVisionIfNeeded() throws Exception {
+        if (visionMode == VisionMode.Off || fiducialNominal == null || getFiducialPart() == null) {
+            return;
+        }
+        if (visionMode == VisionMode.FirstFeedOfJob && visionDoneThisJob) {
+            return;
+        }
+        if (!Configuration.get().getMachine().isHomed()) {
+            return; // not running a job; camera moves are not possible
+        }
+        locateByFiducial();
+        visionDoneThisJob = true;
     }
 
     @Override

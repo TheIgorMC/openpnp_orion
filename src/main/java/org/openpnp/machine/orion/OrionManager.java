@@ -109,6 +109,37 @@ public class OrionManager {
         });
     }
 
+    private Machine hookedMachine;
+
+    /**
+     * Called by OrionFeeder instances once the configuration is loaded: auto connect and scan when
+     * the machine is enabled (if the user left that option on).
+     */
+    public synchronized void hookMachine(Machine machine) {
+        if (hookedMachine == machine) {
+            return;
+        }
+        hookedMachine = machine;
+        machine.addListener(new org.openpnp.spi.MachineListener.Adapter() {
+            @Override
+            public void machineEnabled(Machine m) {
+                if (!getSettings().isConnectOnEnable()) {
+                    return;
+                }
+                org.openpnp.util.UiUtils.submitUiMachineTask(() -> {
+                    connectIfNeeded();
+                    for (OrionBus b : getBuses()) {
+                        b.scan(null);
+                    }
+                    refresh();
+                    return null;
+                }, r -> {
+                }, t -> addLog(0, OrionBusListener.Direction.ERROR,
+                        "Auto connect/scan failed: " + t.getMessage()), true);
+            }
+        });
+    }
+
     // ------------------------------------------------------------------ log
 
     private final OrionBusListener busListener = (rail, dir, text) -> addLog(rail, dir, text);
@@ -172,6 +203,7 @@ public class OrionManager {
     }
 
     public synchronized void connect() throws OrionException {
+        hookMachine(Configuration.get().getMachine());
         disconnect();
         OrionSettings s = getSettings();
         OrionTransport t;
