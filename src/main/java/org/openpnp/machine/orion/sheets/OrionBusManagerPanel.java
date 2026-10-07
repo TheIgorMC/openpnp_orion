@@ -150,42 +150,34 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         method.addActionListener(e -> s.setIdentifyMethod((OrionSettings.IdentifyMethod) method.getSelectedItem()));
         OrionUi.row(p, 0, "Used when a fiducial cannot be matched to a unit directly", method);
 
-        JPanel fib = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        fib.add(new JLabel("brightness rise >"));
-        fib.add(spinner(s.getFiberThreshold(), 1, 255, 1, s::setFiberThreshold));
-        fib.add(new JLabel("settle (ms)"));
-        fib.add(spinner(s.getSettleMs(), 0, 5000, 50, v -> s.setSettleMs((int) v)));
-        OrionUi.row(p, 1, "Fiber light", fib);
-        JPanel tape = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        tape.add(new JLabel("changed pixels >"));
-        tape.add(spinner(s.getMovementThreshold(), 1, 100000, 10, s::setMovementThreshold));
-        tape.add(new JLabel("moved back (mm)"));
-        tape.add(spinner(s.getMovementMm(), 0.1, 5, 0.1, s::setMovementMm));
-        tape.add(new JLabel("stagger (ms between feeders)"));
-        tape.add(spinner(s.getStaggerMs(), 0, 5000, 50, v -> s.setStaggerMs((int) v)));
-        OrionUi.row(p, 2, "Tape movement (fallback)", tape);
-
-        JPanel pipes = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        pipes.add(button("Edit fiber pipeline...", () -> editPipeline("Orion fiber detection",
-                s.getFiberPipeline())));
-        pipes.add(button("Reset", () -> s.resetFiberPipeline()));
-        pipes.add(button("Edit tape pipeline...", () -> editPipeline("Orion tape movement",
-                s.getMovementPipeline())));
-        pipes.add(button("Reset", () -> s.resetMovementPipeline()));
-        OrionUi.row(p, 3, "Pipelines", pipes);
-
-        JPanel tune = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        tune.add(button("Fiber ON", () -> tuneAction("Fiber on", f -> f.setFiber(true))));
-        tune.add(button("Fiber OFF", () -> tuneAction("Fiber off", f -> f.setFiber(false))));
-        tune.add(button("Test fiber", () -> testFiber()));
-        tune.add(button("Test tape movement", () -> testMovement()));
-        OrionUi.row(p, 4, "Tuning (unit selected below)", tune);
+        OrionUi.row(p, 1, "Fiber light", OrionUi.line(new JLabel("brightness rise >"),
+                spinner(s.getFiberThreshold(), 1, 255, 1, s::setFiberThreshold)));
+        OrionUi.row(p, 2, "Tape movement (fallback)", OrionUi.line(new JLabel("changed pixels >"),
+                spinner(s.getMovementThreshold(), 1, 100000, 10, s::setMovementThreshold),
+                new JLabel("moved back (mm)"), spinner(s.getMovementMm(), 0.1, 5, 0.1, s::setMovementMm),
+                new JLabel("stagger (ms between feeders)"),
+                spinner(s.getStaggerMs(), 0, 5000, 50, v -> s.setStaggerMs((int) v))));
+        OrionUi.row(p, 3, "Camera settle (both methods)", OrionUi.line(
+                spinner(s.getSettleMs(), 0, 5000, 50, v -> s.setSettleMs((int) v)),
+                new JLabel("ms to wait after switching a fiber or moving a tape, before taking the picture")));
+        OrionUi.row(p, 4, "Pipelines", OrionUi.line(
+                button("Edit fiber pipeline...", () -> editPipeline("Orion fiber detection",
+                        s.getFiberPipeline())),
+                button("Reset", () -> s.resetFiberPipeline()),
+                button("Edit tape pipeline...", () -> editPipeline("Orion tape movement",
+                        s.getMovementPipeline())),
+                button("Reset", () -> s.resetMovementPipeline())));
+        OrionUi.row(p, 5, "Tuning (unit selected below)", OrionUi.line(
+                button("Fiber ON", () -> tuneAction("Fiber on", f -> f.setFiber(true))),
+                button("Fiber OFF", () -> tuneAction("Fiber off", f -> f.setFiber(false))),
+                button("Test fiber", () -> testFiber()),
+                button("Test tape movement", () -> testMovement())));
         JLabel hint = new JLabel("<html><body style='width:560px'>Jog the camera over the fiber spot (or a "
                 + "sprocket hole), press <b>Fiber ON</b>, open the pipeline and tune the mask / blur until "
                 + "the spot stands out. <b>Test</b> reports the measured values and the verdict; set the "
                 + "threshold between 'off' and 'on'. The spot / hole offsets from the large fiducial are set "
                 + "per rail below.</body></html>");
-        OrionUi.row(p, 5, "", hint);
+        OrionUi.row(p, 6, "", hint);
         return p;
     }
 
@@ -415,6 +407,44 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             add(buttons(), BorderLayout.SOUTH);
         }
 
+        private javax.swing.JSpinner fiberX;
+        private javax.swing.JSpinner fiberY;
+        private javax.swing.JSpinner holeX;
+        private javax.swing.JSpinner holeY;
+
+        /**
+         * The camera is over the fiber spot (or a hole): store its offset from the selected feeder's
+         * large fiducial, so the offset does not have to be measured and typed.
+         */
+        private void teachOffset(boolean fiber) {
+            Row r = selected();
+            if (r == null || r.feeder == null || r.feeder.getFiducialNominal() == null) {
+                JOptionPane.showMessageDialog(this, "Select a feeder whose large fiducial position is "
+                        + "known (use \"Locate selected here\" over its fiducial first), then jog the camera "
+                        + "over the " + (fiber ? "fiber spot" : "sprocket hole") + " and press Teach here.");
+                return;
+            }
+            org.openpnp.machine.orion.OrionRailSettings rs = mgr.getSettings().getRailSettings(rail);
+            OrionUi.run("Teach offset", () -> {
+                org.openpnp.model.Location cam = Configuration.get().getMachine().getDefaultHead()
+                        .getDefaultCamera().getLocation()
+                        .convertToUnits(org.openpnp.model.LengthUnit.Millimeters);
+                org.openpnp.model.Location fid = r.feeder.getFiducialNominalOrDefault(rs)
+                        .convertToUnits(org.openpnp.model.LengthUnit.Millimeters);
+                return new double[] {cam.getX() - fid.getX(), cam.getY() - fid.getY()};
+            }, d -> {
+                double dx = Math.round(d[0] * 100) / 100.0;
+                double dy = Math.round(d[1] * 100) / 100.0;
+                if (fiber) {
+                    fiberX.setValue(dx);
+                    fiberY.setValue(dy);
+                } else {
+                    holeX.setValue(dx);
+                    holeY.setValue(dy);
+                }
+            });
+        }
+
         private javax.swing.JSpinner dspin(double v, double min, double max, double step,
                 java.util.function.DoubleConsumer set) {
             javax.swing.JSpinner sp = new javax.swing.JSpinner(new SpinnerNumberModel(v, min, max, step));
@@ -425,7 +455,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
 
         private JPanel visionSettings() {
             org.openpnp.machine.orion.OrionRailSettings rs = mgr.getSettings().getRailSettings(rail);
-            JPanel p = new JPanel(new java.awt.GridLayout(3, 1));
+            JPanel p = new JPanel(new java.awt.GridLayout(4, 1));
             p.setBorder(BorderFactory.createTitledBorder(
                     "Vision scan of this rail (large fiducials; machine coordinates, mm)"));
             JPanel row1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
@@ -433,7 +463,9 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             JPanel row3 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
             p.add(row1);
             p.add(row2);
+            JPanel row4 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
             p.add(row3);
+            p.add(row4);
             row1.add(new JLabel("X from"));
             row1.add(dspin(rs.getXMin(), -5000, 5000, 1, rs::setXMin));
             row1.add(new JLabel("to"));
@@ -450,15 +482,21 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             row2.add(dspin(rs.getMinSaveMm(), 0, 5, 0.01, rs::setMinSaveMm));
             row2.add(new JLabel("reject >"));
             row2.add(dspin(rs.getMaxShiftMm(), 0.1, 50, 0.1, rs::setMaxShiftMm));
-            row3.add(new JLabel("fiber spot dX/dY"));
-            row3.add(dspin(rs.getFiberOffsetX(), -500, 500, 0.5, rs::setFiberOffsetX));
-            row3.add(dspin(rs.getFiberOffsetY(), -500, 500, 0.5, rs::setFiberOffsetY));
+            fiberX = dspin(rs.getFiberOffsetX(), -500, 500, 0.1, rs::setFiberOffsetX);
+            fiberY = dspin(rs.getFiberOffsetY(), -500, 500, 0.1, rs::setFiberOffsetY);
+            holeX = dspin(rs.getHoleOffsetX(), -500, 500, 0.1, rs::setHoleOffsetX);
+            holeY = dspin(rs.getHoleOffsetY(), -500, 500, 0.1, rs::setHoleOffsetY);
+            row3.add(new JLabel("fiber spot from fiducial dX/dY"));
+            row3.add(fiberX);
+            row3.add(fiberY);
+            row3.add(button("Teach here", () -> teachOffset(true)));
             row3.add(new JLabel("hole dX/dY"));
-            row3.add(dspin(rs.getHoleOffsetX(), -500, 500, 0.5, rs::setHoleOffsetX));
-            row3.add(dspin(rs.getHoleOffsetY(), -500, 500, 0.5, rs::setHoleOffsetY));
+            row3.add(holeX);
+            row3.add(holeY);
+            row3.add(button("Teach here", () -> teachOffset(false)));
             JCheckBox auto = new JCheckBox("Rescan automatically when a feeder is missing", rs.isAutoRescan());
             auto.addActionListener(e -> rs.setAutoRescan(auto.isSelected()));
-            row3.add(auto);
+            row4.add(auto);
             return p;
         }
 

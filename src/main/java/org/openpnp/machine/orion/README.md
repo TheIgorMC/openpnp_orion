@@ -132,6 +132,11 @@ ON**, edit the pipeline until the spot stands out, **Test fiber** shows off / on
 against the threshold (**Fiber OFF** to switch it off). **Test tape movement** does the same with
 the jog. A brighter LED just raises the rise; adjust the threshold.
 
+The fiber spot and sprocket hole offsets (from the large fiducial, per rail) can be typed in or taught:
+select a feeder whose large fiducial is known, jog the camera over the fiber spot (or a hole) and press
+**Teach here**. The settle time (camera wait after switching a fiber or moving a tape) is one shared
+field on the identification tab.
+
 ## Vision (fine X position)
 
 A fiducial part on or beside the feeder marks its real position. Set the fiducial part (its

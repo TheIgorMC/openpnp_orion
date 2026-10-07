@@ -77,6 +77,17 @@ final class OrionUi {
         c.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, d.height));
     }
 
+    /** A single non-wrapping row of components (FlowLayout wraps and clips inside a GridBag cell). */
+    static JPanel line(Component... cs) {
+        JPanel p = new JPanel();
+        p.setLayout(new javax.swing.BoxLayout(p, javax.swing.BoxLayout.X_AXIS));
+        for (Component c : cs) {
+            p.add(c);
+            p.add(javax.swing.Box.createHorizontalStrut(6));
+        }
+        return p;
+    }
+
     static JPanel grid() {
         return new JPanel(new GridBagLayout());
     }
