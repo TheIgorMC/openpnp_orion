@@ -123,13 +123,42 @@ public class OrionBus {
                         : OrionError.UNKNOWN;
                 throw new OrionException(OrionException.Kind.NACK, err,
                         String.format("%s refused by address %d: %s", OrionCommand.name(cmd),
-                                address, err.description));
+                                address, nackHint(cmd, err)));
             }
             touch(address);
             return mine;
         }
         markLost(address);
         throw last;
+    }
+
+    /** Say what the unit actually objects to, instead of the generic error text. */
+    static String nackHint(int cmd, OrionError err) {
+        switch (err) {
+            case NOT_READY:
+                if (cmd == OrionCommand.PEEL) {
+                    return "no peel time is saved on the unit. Enter 'Peel time' (ms) in the Orion Feeder tab and "
+                            + "press Apply, or save one on the unit first";
+                }
+                if (cmd == OrionCommand.FEED_NEXT || cmd == OrionCommand.FEED_BACK) {
+                    return "no pitch is saved on the unit. Enter 'Pitch' (mm) in the Orion Feeder tab and "
+                            + "press Apply, or save one on the unit first";
+                }
+                return err.description;
+            case BAD_PARAM:
+                if (cmd == OrionCommand.SET_PEEL_TIME) {
+                    return "peel time must be 10 to 5000 ms (use -1 to leave it as it is)";
+                }
+                if (cmd == OrionCommand.SET_PEEL_RATE) {
+                    return "peel coupling must be 0.5 to 500 ms per mm, or 0 for off (use -1 to leave it)";
+                }
+                if (cmd == OrionCommand.SET_PITCH_MM) {
+                    return "pitch must be an even number of mm from 2 to 24 (use 0 to leave it)";
+                }
+                return err.description;
+            default:
+                return err.description;
+        }
     }
 
     private OrionFrame expect(int address, int cmd, byte[] payload, int timeoutMs, int replyCmd)

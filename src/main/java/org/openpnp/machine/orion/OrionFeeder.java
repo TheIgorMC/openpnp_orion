@@ -247,6 +247,13 @@ public class OrionFeeder extends ReferenceFeeder {
         if (applySettings && !key.equals(configuredForSerialAddress)) {
             applySettings(link);
             configuredForSerialAddress = key;
+            if (getPart() == null) {
+                try {
+                    assignPartFromComponent(l.bus.getComponent(l.info.address)[0]);
+                } catch (OrionException ignored) {
+                    // not essential
+                }
+            }
         }
         return link;
     }
@@ -272,6 +279,57 @@ public class OrionFeeder extends ReferenceFeeder {
     /** What the unit itself reports (after {@link #readSettingsFromUnit()}), for display. */
     private transient String unitSummary = "";
 
+    /**
+     * The unit remembers which component is loaded; make that the feeder's part (and enable the feeder)
+     * when the id is known. Unknown ids are left for the user: assigning a part later learns the pairing.
+     */
+    private void assignPartFromComponent(int componentId) {
+        if (componentId == 0xFFFF) {
+            return;
+        }
+        String partId = OrionManager.get().getSettings().partFor(componentId);
+        if (partId == null) {
+            Logger.info("Orion feeder {}: unit holds component id {} which no part is paired with yet",
+                    getName(), componentId);
+            return;
+        }
+        Part part = Configuration.get().getPart(partId);
+        if (part != null && (getPart() == null || !partId.equals(getPart().getId()))) {
+            setPart(part);
+            setEnabled(true);
+        }
+    }
+
+    /**
+     * After the user assigned a part: make the unit and OpenPnP agree on which component is loaded.
+     * A unit that already holds an id nobody is paired with yet teaches us the pairing (nothing is
+     * written, calibration stays). Otherwise the part's id is written to the unit; changing the id makes
+     * the unit clear its tape zero and pitch, so the pitch / peel settings are pushed again afterwards.
+     */
+    public synchronized void syncComponentToUnit() throws Exception {
+        Part part = getPart();
+        if (part == null || serial == null) {
+            return;
+        }
+        OrionSettings st = OrionManager.get().getSettings();
+        Link l = link(false);
+        int unitId = l.bus.getComponent(l.address())[0];
+        Integer mapped = st.componentFor(part.getId());
+        if (mapped == null) {
+            if (unitId != 0xFFFF && st.partFor(unitId) == null) {
+                st.learn(part.getId(), unitId); // the unit already says what it holds: take it over
+                return;
+            }
+            mapped = st.allocateComponent(part.getId());
+        }
+        if (unitId != mapped) {
+            Logger.info("Orion feeder {}: writing component id {} for part {}", getName(), mapped, part.getId());
+            l.bus.setComponent(l.address(), mapped);
+            configuredForSerialAddress = null; // pitch and tape zero were cleared by the unit
+        }
+        link(true);
+    }
+
     public String getUnitSummary() {
         return unitSummary;
     }
@@ -291,6 +349,7 @@ public class OrionFeeder extends ReferenceFeeder {
         setPitchMm(comp[2] > 0 ? comp[2] * 2 : 0);
         currentSlotXMm = link.bus.getSlotPosition(a);
         configuredForSerialAddress = serial + "@" + a;
+        assignPartFromComponent(comp[0]);
         unitSummary = String.format("pitch %s, peel time %s, peel rate %s, component %d, slot X %s",
                 comp[2] > 0 ? comp[2] * 2 + " mm" : "not set", time < 0 ? "not set" : time + " ms",
                 rate < 0 ? "not set" : String.format("%.1f ms/mm", rate / 10.0), comp[0],
@@ -376,6 +435,11 @@ public class OrionFeeder extends ReferenceFeeder {
                 throw new OrionException(e.kind, e.error, "Feeder '" + getName() + "' failed to "
                         + (move == Move.FEED ? "feed" : "unfeed") + ": " + e.getMessage());
             }
+        }
+        if (last instanceof OrionException && ((OrionException) last).kind == OrionException.Kind.NACK) {
+            // The unit answered every time but refused: say so, it is not a communication problem.
+            throw new OrionException(OrionException.Kind.NACK, ((OrionException) last).error,
+                    "Feeder '" + getName() + "': " + last.getMessage());
         }
         throw new OrionException(OrionException.Kind.TIMEOUT, OrionError.NONE,
                 "Feeder '" + getName() + "' did not respond to " + move + " after "

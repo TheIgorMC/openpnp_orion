@@ -8,6 +8,7 @@ import org.openpnp.vision.pipeline.CvPipeline;
 import org.simpleframework.xml.Attribute;
 import org.simpleframework.xml.Element;
 import org.simpleframework.xml.ElementList;
+import org.simpleframework.xml.ElementMap;
 import org.simpleframework.xml.Root;
 
 /** Machine-wide Orion bus settings, stored as a machine property (machine.xml). */
@@ -64,6 +65,54 @@ public class OrionSettings {
 
     @ElementList(required = false)
     private List<OrionRailSettings> railSettings = new ArrayList<>();
+
+    /**
+     * OpenPnP part id -> component id stored on the units (a number, 0..65534). Learned from units the
+     * first time a part is assigned, or allocated for new parts, so the part follows the unit.
+     */
+    @ElementMap(required = false, entry = "component", key = "part", attribute = true, value = "id")
+    private java.util.Map<String, Integer> componentMap = new java.util.HashMap<>();
+
+    public synchronized Integer componentFor(String partId) {
+        return partId == null ? null : componentMap.get(partId);
+    }
+
+    public synchronized String partFor(int componentId) {
+        for (java.util.Map.Entry<String, Integer> e : componentMap.entrySet()) {
+            if (e.getValue() == componentId) {
+                return e.getKey();
+            }
+        }
+        return null;
+    }
+
+    /** Remember that this part is what component id N means. */
+    public synchronized void learn(String partId, int componentId) {
+        componentMap.put(partId, componentId);
+    }
+
+    /** Next free component id (from 1) for a part that has none yet; numeric part ids keep their number. */
+    public synchronized int allocateComponent(String partId) {
+        Integer have = componentMap.get(partId);
+        if (have != null) {
+            return have;
+        }
+        int id = -1;
+        try {
+            int n = Integer.parseInt(partId.trim());
+            if (n >= 0 && n <= 65534 && partFor(n) == null) {
+                id = n;
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        for (int c = 1; id < 0 && c <= 65534; c++) {
+            if (partFor(c) == null) {
+                id = c;
+            }
+        }
+        componentMap.put(partId, id);
+        return id;
+    }
 
     public enum IdentifyMethod {
         Off("Off (leave ambiguous feeders unresolved)"),

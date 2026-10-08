@@ -15,7 +15,7 @@ public class SimulatedOrionTransport implements OrionTransport {
         public int address = 0;
         public int nonce;
         public boolean present = true;
-        public int componentId = 0;
+        public int componentId = 0xFFFF; // unset, like the firmware
         public int zero = 0;
         public int halfTeeth = 0;
         public int tapeWidth = 8;

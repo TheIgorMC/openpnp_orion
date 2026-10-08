@@ -232,6 +232,7 @@ public class OrionFeederTest {
         OrionSettings st = mgr.getSettings();
         st.setIdentifyMethod(OrionSettings.IdentifyMethod.TapeMovement);
         st.setFiberThreshold(77);
+        st.learn("PART-X", 5);
         st.getFiberPipeline(); // creates the default
         mgr.getSettings().getRailSettings(0).setFiberOffsetX(12.5);
         Configuration.get().save();
@@ -240,6 +241,8 @@ public class OrionFeederTest {
         OrionSettings back = mgr.getSettings();
         assertEquals(OrionSettings.IdentifyMethod.TapeMovement, back.getIdentifyMethod());
         assertEquals(77.0, back.getFiberThreshold());
+        assertEquals(Integer.valueOf(5), back.componentFor("PART-X"));
+        assertEquals("PART-X", back.partFor(5));
         assertEquals(12.5, back.getRailSettings(0).getFiberOffsetX());
         assertEquals(4, back.getFiberPipeline().getStages().size());
     }
@@ -309,5 +312,60 @@ public class OrionFeederTest {
         u.halfTeeth = 0; // unit without a pitch
         OrionException e = assertThrows(OrionException.class, f::feedOnce);
         assertTrue(e.getMessage().contains("no pitch"), e.getMessage());
+    }
+
+    private org.openpnp.model.Part part(String id) throws Exception {
+        org.openpnp.model.Package pkg = Configuration.get().getPackage("T-PKG");
+        if (pkg == null) {
+            pkg = new org.openpnp.model.Package("T-PKG");
+            Configuration.get().addPackage(pkg);
+        }
+        org.openpnp.model.Part p = new org.openpnp.model.Part(id);
+        p.setPackage(pkg);
+        Configuration.get().addPart(p);
+        return p;
+    }
+
+    @Test
+    void partPairedWithTheUnitsComponentIdIsAssignedAndEnabledAutomatically() throws Exception {
+        mgr.connect();
+        part("R-10K");
+        mgr.getSettings().learn("R-10K", 7);
+        sim().getFeeders().get(0).componentId = 7; // set earlier with the old GUI
+        mgr.getBus(0).scan(null);
+        OrionFeeder f = mgr.createFeedersForUnbound(0).get(0);
+        assertNotNull(f.getPart());
+        assertEquals("R-10K", f.getPart().getId());
+        assertTrue(f.isEnabled());
+    }
+
+    @Test
+    void assigningAPartLearnsTheUnitsExistingIdWithoutRewritingTheUnit() throws Exception {
+        mgr.connect();
+        SimulatedOrionTransport.SimFeeder u = sim().getFeeders().get(0);
+        u.componentId = 9;
+        u.halfTeeth = 3;
+        u.zero = 123;
+        mgr.getBus(0).scan(null);
+        OrionFeeder f = mgr.createFeedersForUnbound(0).get(0);
+        assertNull(f.getPart(), "id 9 is not paired with any part yet");
+        f.setPart(part("C-100N"));
+        f.syncComponentToUnit();
+        assertEquals(Integer.valueOf(9), mgr.getSettings().componentFor("C-100N"));
+        assertEquals(9, u.componentId);
+        assertEquals(3, u.halfTeeth, "calibration untouched");
+        assertEquals(123, u.zero);
+    }
+
+    @Test
+    void changingThePartWritesItsIdAndRestoresPitchAfterTheUnitClearedIt() throws Exception {
+        OrionFeeder f = bound(0); // pitch 4 mm set in OpenPnP
+        SimulatedOrionTransport.SimFeeder u = sim().getFeeders().get(0);
+        f.setPart(part("L-GREEN"));
+        f.syncComponentToUnit();
+        Integer id = mgr.getSettings().componentFor("L-GREEN");
+        assertNotNull(id);
+        assertEquals(id.intValue(), u.componentId);
+        assertEquals(2, u.halfTeeth, "pitch pushed again after the component change");
     }
 }

@@ -368,7 +368,10 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         super.saveToModel();
         // Live update: if the unit is reachable, push the new settings right away.
         if (feeder.getSerial() != null && OrionManager.get().isConnected()) {
-            OrionUi.run("Push settings", () -> feeder.link());
+            OrionUi.run("Push settings", () -> {
+                feeder.link();
+                feeder.syncComponentToUnit(); // part <-> component id on the unit
+            });
         }
     }
 

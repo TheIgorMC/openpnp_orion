@@ -74,6 +74,18 @@ and *Bind to unit*, read the unit's own values (e.g. set with the Python GUI) an
 "Unit reports"; *Read from unit* does the same on demand and pushes nothing. A feeder created by an
 earlier build may still hold a pitch of 4: press *Read from unit* once (or delete and recreate it).
 
+## Part <-> component id on the unit
+
+The unit stores a numeric component id. Orion keeps a table part id <-> component id (saved with the
+machine). When a unit is read (creating its feeder, *Bind to unit*, *Read from unit*, or first contact of
+a feeder without part) and its id is paired with a part, the feeder gets that part and is enabled, no
+checking needed. The first time you assign a part to a feeder whose unit already holds an unpaired id
+(e.g. set with the Python GUI) the pairing is learned and nothing is written to the unit. A part with
+no id yet gets a free number (a numeric part id keeps its number) and that is written to the unit;
+changing a unit's id makes it clear tape zero and pitch (firmware behaviour), so the pitch / peel
+settings are pushed again right away. Unit refusals now name the cause ("no peel time saved on the
+unit", "no pitch saved on the unit").
+
 ## Identity, scanning and conflicts
 
 * A feeder is bound by **serial** (16 byte factory serial, from `CMD_GET_SERIAL`). Bus addresses
