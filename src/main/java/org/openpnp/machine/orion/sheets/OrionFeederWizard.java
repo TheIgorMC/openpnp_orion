@@ -37,6 +37,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
 
     private final JLabel serialLabel = new JLabel();
     private final JLabel stateLabel = new JLabel();
+    private final JLabel perFeedLabel = new JLabel(" ");
     private final JLabel unitLabel = new JLabel("(press Read from unit)");
     private final JComboBox<Part> partCb = new JComboBox<>();
     private final JTextField pitchTf = new JTextField(6);
@@ -98,6 +99,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         OrionUi.row(cfg, 2, "Peel per feed (ms of peel per mm of feed, 0=off, -1=leave)", peelRateTf);
         OrionUi.row(cfg, 3, "LED brightness (1..255, 0=leave)", ledTf);
         OrionUi.row(cfg, 4, "Feed retries", retriesTf);
+        OrionUi.row(cfg, 5, "One feed does", perFeedLabel);
         contentPanel.add(cfg);
 
         // ---- location
@@ -216,6 +218,21 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
             OrionUi.compact((javax.swing.JComponent) c);
         }
 
+        javax.swing.event.DocumentListener dl = new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                updatePerFeed();
+            }
+
+            public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                updatePerFeed();
+            }
+
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                updatePerFeed();
+            }
+        };
+        pitchTf.getDocument().addDocumentListener(dl);
+        peelRateTf.getDocument().addDocumentListener(dl);
         locationPanel.setBaseLocation(feeder.getLocation());
         OrionManager.get().addListener(this);
         refreshState();
@@ -228,6 +245,24 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         }
         b.addActionListener(e -> OrionUi.run(text, action));
         return b;
+    }
+
+    /** Pitch x peel rate = how much the unit peels by itself on one feed command. */
+    private void updatePerFeed() {
+        try {
+            double pitch = Double.parseDouble(pitchTf.getText().trim().replace(',', '.'));
+            double rate = Double.parseDouble(peelRateTf.getText().trim().replace(',', '.'));
+            if (pitch <= 0) {
+                perFeedLabel.setText("pitch as stored on the unit");
+            } else if (rate < 0) {
+                perFeedLabel.setText(String.format("%.0f mm feed, peel rate as stored on the unit", pitch));
+            } else {
+                perFeedLabel.setText(String.format("%.0f mm feed + %.0f ms of peel (%.1f ms/mm), done by the unit",
+                        pitch, pitch * rate, rate));
+            }
+        } catch (NumberFormatException e) {
+            perFeedLabel.setText(" ");
+        }
     }
 
     private void bindToUnit() {
