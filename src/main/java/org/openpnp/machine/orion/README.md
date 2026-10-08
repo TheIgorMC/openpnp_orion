@@ -68,7 +68,7 @@ the first reply (needed for DISCOVER, where several feeders answer with random j
 
 ## Settings: unit values win unless you set them
 
-Pitch, peel time, peel rate and LED brightness are only pushed to a unit when you set them in the
+Pitch, peel coupling rate and LED brightness are only pushed to a unit when you set them in the
 feeder tab (pitch 0, peel -1 and LED 0 mean *leave what the unit has*). Feeders created from a unit,
 and *Bind to unit*, read the unit's own values (e.g. set with the Python GUI) and show them under
 "Unit reports"; *Read from unit* does the same on demand and pushes nothing. A feeder created by an
@@ -217,3 +217,10 @@ Needs a JDK (the project targets Java 11) and Maven.
   (it must match your Windows, normally `amd64`).
 * The `Unsafe`, `CoInitializeEx` and "restricted method" warnings at start-up come from OpenPnP's
   own libraries and are harmless.
+
+## Peel
+
+Feeding is one feed move plus the peel that goes with it: the *peel per feed* setting (ms of peel per
+mm of feed, the unit's coupling rate) is the only peel parameter OpenPnP manages. The unit's separate
+single-shot peel time is internal to the feeder: OpenPnP neither shows, reads nor writes it. The Peel /
+Unpeel buttons (manual loading) use the unit's own peel time when it has one, otherwise 0.5 s.

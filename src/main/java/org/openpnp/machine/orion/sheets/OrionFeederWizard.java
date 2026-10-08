@@ -41,7 +41,6 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
     private final JComboBox<Part> partCb = new JComboBox<>();
     private final JTextField pitchTf = new JTextField(6);
     private final JTextField peelRateTf = new JTextField(6);
-    private final JTextField peelTimeTf = new JTextField(6);
     private final JTextField ledTf = new JTextField(6);
     private final JTextField retriesTf = new JTextField(6);
     private final JTextField xTf = new JTextField(8);
@@ -96,10 +95,9 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         partCb.setRenderer(new IdentifiableListCellRenderer<Part>());
         OrionUi.row(cfg, 0, "Part", partCb);
         OrionUi.row(cfg, 1, "Pitch (mm, even 2..24, 0 = keep what the unit has)", pitchTf);
-        OrionUi.row(cfg, 2, "Peel coupling (ms of peel per mm, 0=off, -1=leave)", peelRateTf);
-        OrionUi.row(cfg, 3, "Peel time for Peel button (ms, -1=leave)", peelTimeTf);
-        OrionUi.row(cfg, 4, "LED brightness (1..255, 0=leave)", ledTf);
-        OrionUi.row(cfg, 5, "Feed retries", retriesTf);
+        OrionUi.row(cfg, 2, "Peel per feed (ms of peel per mm of feed, 0=off, -1=leave)", peelRateTf);
+        OrionUi.row(cfg, 3, "LED brightness (1..255, 0=leave)", ledTf);
+        OrionUi.row(cfg, 4, "Feed retries", retriesTf);
         contentPanel.add(cfg);
 
         // ---- location
@@ -338,7 +336,6 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         addWrappedBinding(feeder, "part", partCb, "selectedItem");
         addWrappedBinding(feeder, "pitchMm", pitchTf, "text", intConverter);
         addWrappedBinding(feeder, "peelMsPerMm", peelRateTf, "text", plain);
-        addWrappedBinding(feeder, "peelTimeMs", peelTimeTf, "text", intConverter);
         addWrappedBinding(feeder, "ledBrightness", ledTf, "text", intConverter);
         addWrappedBinding(feeder, "feedRetries", retriesTf, "text", intConverter);
 

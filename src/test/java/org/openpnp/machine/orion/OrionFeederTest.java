@@ -54,13 +54,12 @@ public class OrionFeederTest {
         OrionFeeder f = bound(0);
         f.setPitchMm(4);
         f.setPeelMsPerMm(12.5);
-        f.setPeelTimeMs(300);
         f.feed(null);
         SimulatedOrionTransport.SimFeeder s = sim().getFeeders().get(0);
         assertEquals(1, s.feeds);
         assertEquals(2, s.halfTeeth);
         assertEquals(125, s.peelRate);
-        assertEquals(300, s.peelTimeMs);
+        assertEquals(0xFFFF, s.peelTimeMs, "the unit's own peel time is never touched");
     }
 
     @Test
@@ -287,7 +286,6 @@ public class OrionFeederTest {
         OrionFeeder f = made.get(0);
         // the feeder mirrors the unit ...
         assertEquals(6, f.getPitchMm());
-        assertEquals(380, f.getPeelTimeMs());
         assertEquals(15.0, f.getPeelMsPerMm(), 1e-9);
         // ... and feeding changes nothing on the unit
         f.feedOnce();

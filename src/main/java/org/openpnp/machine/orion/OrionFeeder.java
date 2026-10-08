@@ -52,7 +52,7 @@ public class OrionFeeder extends ReferenceFeeder {
 
     /** Standalone peel duration used by the Peel / Unpeel buttons, ms. Negative = leave as is. */
     @Attribute(required = false)
-    protected int peelTimeMs = -1;
+    protected int peelTimeMs = -1; // unused: the unit's own peel time is internal, kept only so old machine.xml files load
 
     @Attribute(required = false)
     protected int ledBrightness = 0;
@@ -268,9 +268,6 @@ public class OrionFeeder extends ReferenceFeeder {
         if (peelMsPerMm >= 0) {
             bus.setPeelRate(a, (int) Math.round(peelMsPerMm * 10.0));
         }
-        if (peelTimeMs >= 0) {
-            bus.setPeelTimeMs(a, peelTimeMs);
-        }
         if (ledBrightness > 0) {
             bus.setLedBrightness(a, ledBrightness);
         }
@@ -345,7 +342,6 @@ public class OrionFeeder extends ReferenceFeeder {
         int time = link.bus.getPeelTimeMs(a);
         int[] comp = link.bus.getComponent(a);
         setPeelMsPerMm(rate < 0 ? -1 : rate / 10.0);
-        setPeelTimeMs(time);
         setPitchMm(comp[2] > 0 ? comp[2] * 2 : 0);
         currentSlotXMm = link.bus.getSlotPosition(a);
         configuredForSerialAddress = serial + "@" + a;
@@ -370,9 +366,21 @@ public class OrionFeeder extends ReferenceFeeder {
         runMove(Move.UNFEED);
     }
 
+    /**
+     * Manual peel for loading tape. Uses the unit's own peel time when it has one, else a fixed 0.5 s.
+     * (Normal feeding peels by itself through the peel coupling rate.)
+     */
     public void peel(boolean reverse) throws Exception {
         Link l = link();
-        l.bus.peelCalibrated(l.address(), reverse);
+        try {
+            l.bus.peelCalibrated(l.address(), reverse);
+        } catch (OrionException e) {
+            if (e.kind == OrionException.Kind.NACK && e.error == OrionError.NOT_READY) {
+                l.bus.peel(l.address(), reverse, 50);
+            } else {
+                throw e;
+            }
+        }
     }
 
     /** Fiber (second) LED on/off, used for identification and for tuning the light detection. */
