@@ -586,6 +586,12 @@ public class OrionManager {
                 f.setTaughtSlotXMm(d.slotXMm);
             }
             Configuration.get().getMachine().addFeeder(f);
+            try {
+                f.readSettingsFromUnit(); // mirror what is stored on the unit, push nothing
+            } catch (Exception e) {
+                addLog(rail, OrionBusListener.Direction.ERROR, "Could not read the settings of "
+                        + f.getName() + ": " + e.getMessage());
+            }
             created.add(f);
         }
         addLog(rail, OrionBusListener.Direction.INFO, "Created " + created.size() + " feeder(s)");

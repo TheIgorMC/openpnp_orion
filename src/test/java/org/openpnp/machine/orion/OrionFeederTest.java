@@ -40,6 +40,7 @@ public class OrionFeederTest {
         f.setName("t" + rail);
         f.setSerial(d.serial);
         f.setRail(rail);
+        f.setPitchMm(4);
         machine.addFeeder(f);
         return f;
     }
@@ -268,5 +269,45 @@ public class OrionFeederTest {
         assertTrue(msg.contains("6 unit(s)") && msg.contains("6 new feeder(s)"), msg);
         assertEquals(6, machine.getFeeders().stream().filter(f -> f instanceof OrionFeeder).count());
         assertTrue(mgr.bootstrap().contains("0 new feeder(s)"), "second run creates nothing");
+    }
+
+    @Test
+    void valuesSetOnTheUnitEarlierAreKeptNotOverwritten() throws Exception {
+        mgr.connect();
+        SimulatedOrionTransport.SimFeeder u = sim().getFeeders().get(0);
+        u.halfTeeth = 3;      // 6 mm, set with the old GUI
+        u.peelTimeMs = 380;
+        u.peelRate = 150;     // 15.0 ms/mm
+        u.componentId = 42;
+        mgr.getBus(0).scan(null);
+        java.util.List<OrionFeeder> made = mgr.createFeedersForUnbound(0);
+        OrionFeeder f = made.get(0);
+        // the feeder mirrors the unit ...
+        assertEquals(6, f.getPitchMm());
+        assertEquals(380, f.getPeelTimeMs());
+        assertEquals(15.0, f.getPeelMsPerMm(), 1e-9);
+        // ... and feeding changes nothing on the unit
+        f.feedOnce();
+        assertEquals(3, u.halfTeeth);
+        assertEquals(380, u.peelTimeMs);
+        assertEquals(150, u.peelRate);
+        assertEquals(42, u.componentId);
+    }
+
+    @Test
+    void feederWithNothingSetLeavesTheUnitAloneAndSaysWhenPitchIsMissing() throws Exception {
+        mgr.connect();
+        SimulatedOrionTransport.SimFeeder u = sim().getFeeders().get(0);
+        u.halfTeeth = 2;
+        mgr.getBus(0).scan(null);
+        OrionFeeder f = new OrionFeeder(); // pitch 0 = leave
+        f.setName("fresh");
+        f.setSerial(mgr.getBus(0).getDevices().get(0).serial);
+        f.setRail(0);
+        f.feedOnce();
+        assertEquals(2, u.halfTeeth, "default must not push a pitch");
+        u.halfTeeth = 0; // unit without a pitch
+        OrionException e = assertThrows(OrionException.class, f::feedOnce);
+        assertTrue(e.getMessage().contains("no pitch"), e.getMessage());
     }
 }

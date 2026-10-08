@@ -66,6 +66,14 @@ Rails are 0-based in the protocol, shown as Rail 1/2 in the UI. `collectMs > 0` 
 the first reply (needed for DISCOVER, where several feeders answer with random jitter). No reply is
 `OK` with no `RX` lines.
 
+## Settings: unit values win unless you set them
+
+Pitch, peel time, peel rate and LED brightness are only pushed to a unit when you set them in the
+feeder tab (pitch 0, peel -1 and LED 0 mean *leave what the unit has*). Feeders created from a unit,
+and *Bind to unit*, read the unit's own values (e.g. set with the Python GUI) and show them under
+"Unit reports"; *Read from unit* does the same on demand and pushes nothing. A feeder created by an
+earlier build may still hold a pitch of 4: press *Read from unit* once (or delete and recreate it).
+
 ## Identity, scanning and conflicts
 
 * A feeder is bound by **serial** (16 byte factory serial, from `CMD_GET_SERIAL`). Bus addresses

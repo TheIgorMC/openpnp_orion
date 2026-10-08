@@ -43,7 +43,8 @@ public class OrionFeeder extends ReferenceFeeder {
     protected int rail = 0;
 
     @Attribute(required = false)
-    protected int pitchMm = 4;
+    /** Part pitch in mm pushed to the unit. 0 = leave whatever is stored on the unit. */
+    protected int pitchMm = 0;
 
     /** Peel coupling in ms of peel per mm of sprocket travel. 0 = off, negative = leave as is. */
     @Attribute(required = false)
@@ -215,6 +216,14 @@ public class OrionFeeder extends ReferenceFeeder {
 
     /** Find the unit (scanning once if it is not known), verify it, and push settings if needed. */
     public synchronized Link link() throws Exception {
+        return link(true);
+    }
+
+    /**
+     * @param applySettings push this feeder's explicitly set values to the unit the first time it is
+     *        seen (false when the caller is about to read the unit's own values instead)
+     */
+    public synchronized Link link(boolean applySettings) throws Exception {
         if (serial == null) {
             throw new OrionException(OrionException.Kind.NOT_FOUND, "Feeder '" + getName()
                     + "' is not bound to hardware. Open the Orion Bus Manager tab, scan, and bind a unit.");
@@ -235,7 +244,7 @@ public class OrionFeeder extends ReferenceFeeder {
         currentSlotXMm = l.info.slotXMm;
         Link link = new Link(l.bus, l.info);
         String key = serial + "@" + l.info.address;
-        if (!key.equals(configuredForSerialAddress)) {
+        if (applySettings && !key.equals(configuredForSerialAddress)) {
             applySettings(link);
             configuredForSerialAddress = key;
         }
@@ -260,19 +269,33 @@ public class OrionFeeder extends ReferenceFeeder {
         }
     }
 
-    /** Read pitch/peel settings back from the unit into this feeder (does not change location). */
-    public void readSettingsFromUnit() throws Exception {
-        Link link = link();
+    /** What the unit itself reports (after {@link #readSettingsFromUnit()}), for display. */
+    private transient String unitSummary = "";
+
+    public String getUnitSummary() {
+        return unitSummary;
+    }
+
+    /**
+     * Take over what is stored on the unit (pitch, peel time / rate, component, slot X), e.g. values set
+     * earlier with the Python GUI. Does NOT push anything to the unit and does not change the location.
+     */
+    public synchronized String readSettingsFromUnit() throws Exception {
+        Link link = link(false);
         int a = link.address();
         int rate = link.bus.getPeelRate(a);
         int time = link.bus.getPeelTimeMs(a);
         int[] comp = link.bus.getComponent(a);
         setPeelMsPerMm(rate < 0 ? -1 : rate / 10.0);
         setPeelTimeMs(time);
-        if (comp[2] > 0) {
-            setPitchMm(comp[2] * 2);
-        }
+        setPitchMm(comp[2] > 0 ? comp[2] * 2 : 0);
+        currentSlotXMm = link.bus.getSlotPosition(a);
         configuredForSerialAddress = serial + "@" + a;
+        unitSummary = String.format("pitch %s, peel time %s, peel rate %s, component %d, slot X %s",
+                comp[2] > 0 ? comp[2] * 2 + " mm" : "not set", time < 0 ? "not set" : time + " ms",
+                rate < 0 ? "not set" : String.format("%.1f ms/mm", rate / 10.0), comp[0],
+                Double.isNaN(currentSlotXMm) ? "not set" : String.format("%.1f mm", currentSlotXMm));
+        return unitSummary;
     }
 
     public void identify() throws Exception {
@@ -342,6 +365,11 @@ public class OrionFeeder extends ReferenceFeeder {
                     continue;
                 }
                 if (e.kind == OrionException.Kind.NACK && e.error == OrionError.NOT_READY) {
+                    if (pitchMm <= 0) {
+                        throw new OrionException(e.kind, e.error, "Feeder '" + getName() + "': the unit has "
+                                + "no pitch set. Set the pitch (mm) in the Orion Feeder tab and press Apply, "
+                                + "or set it on the unit first.");
+                    }
                     configuredForSerialAddress = null;
                     continue; // link() pushes the pitch and we retry
                 }

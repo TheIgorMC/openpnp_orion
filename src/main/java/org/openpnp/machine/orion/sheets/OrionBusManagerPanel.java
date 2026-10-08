@@ -654,7 +654,10 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                 f.setSerial(r.info.serial);
                 f.setRail(rail);
                 Configuration.get().getMachine().addFeeder(f);
-                OrionUi.run("Identify", () -> f.identify());
+                OrionUi.run("Identify", () -> {
+                    f.identify();
+                    return f.readSettingsFromUnit(); // mirror the unit's own settings
+                }, summary -> mgr.refresh());
                 mgr.refresh();
             } catch (Exception e) {
                 org.openpnp.gui.support.MessageBoxes.errorBox(MainFrame.get(), "Create feeder", e);

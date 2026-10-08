@@ -37,6 +37,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
 
     private final JLabel serialLabel = new JLabel();
     private final JLabel stateLabel = new JLabel();
+    private final JLabel unitLabel = new JLabel("(press Read from unit)");
     private final JComboBox<Part> partCb = new JComboBox<>();
     private final JTextField pitchTf = new JTextField(6);
     private final JTextField peelRateTf = new JTextField(6);
@@ -85,6 +86,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         serialRow.add(unbind);
         OrionUi.row(hw, 0, "Serial", serialRow);
         OrionUi.row(hw, 1, "State", stateLabel);
+        OrionUi.row(hw, 2, "Unit reports", unitLabel);
         contentPanel.add(hw);
 
         // ---- settings
@@ -93,7 +95,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         partCb.setModel(new PartsComboBoxModel());
         partCb.setRenderer(new IdentifiableListCellRenderer<Part>());
         OrionUi.row(cfg, 0, "Part", partCb);
-        OrionUi.row(cfg, 1, "Pitch (mm, even 2..24)", pitchTf);
+        OrionUi.row(cfg, 1, "Pitch (mm, even 2..24, 0 = keep what the unit has)", pitchTf);
         OrionUi.row(cfg, 2, "Peel coupling (ms of peel per mm, 0=off, -1=leave)", peelRateTf);
         OrionUi.row(cfg, 3, "Peel time for Peel button (ms, -1=leave)", peelTimeTf);
         OrionUi.row(cfg, 4, "LED brightness (1..255, 0=leave)", ledTf);
@@ -205,8 +207,11 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
                 () -> feeder.zeroHere()));
         JButton read = new JButton("Read from unit");
         read.setToolTipText("Load pitch / peel settings from the unit into this form's feeder");
-        read.addActionListener(e -> OrionUi.run("Read settings", () -> feeder.readSettingsFromUnit()
-        ));
+        read.addActionListener(e -> OrionUi.run("Read settings", () -> feeder.readSettingsFromUnit(),
+                summary -> {
+                    unitLabel.setText(summary);
+                    loadFromModel();
+                }));
         live.add(read);
         contentPanel.add(live);
         for (java.awt.Component c : contentPanel.getComponents()) {
@@ -259,7 +264,13 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
             if (labels[i].equals(choice)) {
                 feeder.setSerial(free.get(i).serial);
                 feeder.setRail(free.get(i).rail);
-                OrionUi.run("Identify", () -> feeder.identify());
+                OrionUi.run("Bind", () -> {
+                    feeder.identify();
+                    return feeder.readSettingsFromUnit();
+                }, summary -> {
+                    unitLabel.setText(summary);
+                    loadFromModel();
+                });
             }
         }
         refreshState();
