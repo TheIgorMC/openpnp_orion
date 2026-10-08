@@ -76,7 +76,9 @@ earlier build may still hold a pitch of 4: press *Read from unit* once (or delet
 
 ## Part <-> component id on the unit
 
-The unit stores a numeric component id. Orion keeps a table part id <-> component id (saved with the
+If your OpenPnP part ids are plain numbers (e.g. `1234`, also zero padded like `0042`) the unit's
+component id IS the part id: no table, reading a unit assigns that part, assigning a part writes its
+number. For other part ids, Orion keeps a table part id <-> component id (saved with the
 machine). When a unit is read (creating its feeder, *Bind to unit*, *Read from unit*, or first contact of
 a feeder without part) and its id is paired with a part, the feeder gets that part and is enabled, no
 checking needed. The first time you assign a part to a feeder whose unit already holds an unpaired id

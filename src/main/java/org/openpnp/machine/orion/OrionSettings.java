@@ -73,11 +73,45 @@ public class OrionSettings {
     @ElementMap(required = false, entry = "component", key = "part", attribute = true, value = "id")
     private java.util.Map<String, Integer> componentMap = new java.util.HashMap<>();
 
-    public synchronized Integer componentFor(String partId) {
-        return partId == null ? null : componentMap.get(partId);
+    /** A part id that is a plain number (0..65534) is its own component id; no table needed. */
+    public static Integer numericId(String partId) {
+        if (partId == null) {
+            return null;
+        }
+        try {
+            int n = Integer.parseInt(partId.trim());
+            return n >= 0 && n <= 65534 ? n : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
+    public synchronized Integer componentFor(String partId) {
+        Integer direct = numericId(partId);
+        return direct != null ? direct : (partId == null ? null : componentMap.get(partId));
+    }
+
+    /**
+     * Part id that goes with a component id: the part whose id IS that number (also "0042" for 42), else
+     * a learned pairing. Null if none.
+     */
     public synchronized String partFor(int componentId) {
+        String exact = String.valueOf(componentId);
+        String loose = null;
+        for (org.openpnp.model.Part p : org.openpnp.model.Configuration.get().getParts()) {
+            Integer n = numericId(p.getId());
+            if (n != null && n == componentId) {
+                if (p.getId().equals(exact)) {
+                    return exact;
+                }
+                if (loose == null) {
+                    loose = p.getId();
+                }
+            }
+        }
+        if (loose != null) {
+            return loose;
+        }
         for (java.util.Map.Entry<String, Integer> e : componentMap.entrySet()) {
             if (e.getValue() == componentId) {
                 return e.getKey();
@@ -93,18 +127,11 @@ public class OrionSettings {
 
     /** Next free component id (from 1) for a part that has none yet; numeric part ids keep their number. */
     public synchronized int allocateComponent(String partId) {
-        Integer have = componentMap.get(partId);
+        Integer have = componentFor(partId);
         if (have != null) {
             return have;
         }
         int id = -1;
-        try {
-            int n = Integer.parseInt(partId.trim());
-            if (n >= 0 && n <= 65534 && partFor(n) == null) {
-                id = n;
-            }
-        } catch (NumberFormatException ignored) {
-        }
         for (int c = 1; id < 0 && c <= 65534; c++) {
             if (partFor(c) == null) {
                 id = c;

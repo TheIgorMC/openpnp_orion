@@ -314,7 +314,7 @@ public class OrionFeeder extends ReferenceFeeder {
         OrionSettings st = OrionManager.get().getSettings();
         Link l = link(false);
         int unitId = l.bus.getComponent(l.address())[0];
-        Integer mapped = st.componentFor(part.getId());
+        Integer mapped = st.componentFor(part.getId()); // a numeric part id is its own component id
         if (mapped == null) {
             if (unitId != 0xFFFF && st.partFor(unitId) == null) {
                 st.learn(part.getId(), unitId); // the unit already says what it holds: take it over

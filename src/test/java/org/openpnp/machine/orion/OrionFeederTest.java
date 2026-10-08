@@ -368,4 +368,27 @@ public class OrionFeederTest {
         assertEquals(id.intValue(), u.componentId);
         assertEquals(2, u.halfTeeth, "pitch pushed again after the component change");
     }
+
+    @Test
+    void numericPartIdIsTheUnitsComponentIdWithNoPairingNeeded() throws Exception {
+        mgr.connect();
+        part("1234");
+        part("0042");
+        sim().getFeeders().get(0).componentId = 1234;
+        sim().getFeeders().get(1).componentId = 42;
+        mgr.getBus(0).scan(null);
+        mgr.getBus(1).scan(null);
+        OrionFeeder a = mgr.createFeedersForUnbound(0).get(0);
+        OrionFeeder b = mgr.createFeedersForUnbound(1).get(0);
+        assertEquals("1234", a.getPart().getId());
+        assertEquals("0042", b.getPart().getId(), "zero padded id still matches");
+        assertTrue(a.isEnabled() && b.isEnabled());
+
+        // the other way: picking part 777 writes 777 to the unit, no table entry
+        a.setPart(part("777"));
+        a.setPitchMm(4);
+        a.syncComponentToUnit();
+        assertEquals(777, sim().getFeeders().get(0).componentId);
+        assertEquals(Integer.valueOf(777), mgr.getSettings().componentFor("777"));
+    }
 }
