@@ -14,6 +14,65 @@ public class JSerialCommChannel implements SerialChannel {
     }
 
     private static volatile String libraryProblem;
+    private static boolean nativePrepared;
+
+    /**
+     * jSerialComm normally unpacks its native library into the temp folder and tries several CPU
+     * architectures in turn (ARM first on Windows). When that unpacking fails (locked or stale file,
+     * antivirus) it ends up trying an ARM DLL on an x64 JVM. Here the matching library is copied once
+     * from the jar to a folder of our own and jSerialComm is pointed at it with
+     * {@code jSerialComm.library.path}, which skips the whole dance. Must run before SerialPort is first
+     * used; harmless otherwise, and never fatal.
+     */
+    public static synchronized void prepareNativeLibrary() {
+        if (nativePrepared || !System.getProperty("jSerialComm.library.path", "").isEmpty()) {
+            return;
+        }
+        nativePrepared = true;
+        try {
+            String os = System.getProperty("os.name", "").toLowerCase();
+            String arch = System.getProperty("os.arch", "").toLowerCase();
+            String dir;
+            String file;
+            if (arch.equals("amd64") || arch.equals("x86_64")) {
+                dir = "x86_64";
+            } else if (arch.equals("aarch64") || arch.equals("arm64")) {
+                dir = "aarch64";
+            } else {
+                return;
+            }
+            if (os.contains("win")) {
+                dir = "Windows/" + dir;
+                file = "jSerialComm.dll";
+            } else if (os.contains("linux")) {
+                dir = "Linux/" + dir;
+                file = "libjSerialComm.so";
+            } else {
+                return;
+            }
+            java.io.File target = new java.io.File(System.getProperty("user.home"),
+                    ".openpnp2" + java.io.File.separator + "orion-native" + java.io.File.separator
+                            + dir.replace('/', '_'));
+            java.io.File lib = new java.io.File(target, file);
+            try (java.io.InputStream in = JSerialCommChannel.class.getResourceAsStream("/" + dir + "/" + file)) {
+                if (in == null) {
+                    return;
+                }
+                byte[] bytes = in.readAllBytes();
+                if (!lib.exists() || lib.length() != bytes.length) {
+                    target.mkdirs();
+                    java.io.File tmp = new java.io.File(target, file + ".part");
+                    java.nio.file.Files.write(tmp.toPath(), bytes);
+                    java.nio.file.Files.move(tmp.toPath(), lib.toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+            System.setProperty("jSerialComm.library.path", target.getAbsolutePath() + java.io.File.separator);
+        } catch (Throwable t) {
+            // Fall back to jSerialComm's own extraction.
+            org.pmw.tinylog.Logger.warn("Orion: could not prepare the serial library: " + t);
+        }
+    }
 
     /** Human readable reason why the native serial library could not be loaded, or null if it works. */
     public static String getLibraryProblem() {
@@ -26,15 +85,22 @@ public class JSerialCommChannel implements SerialChannel {
      * there (or a wrong architecture) makes it fail with UnsatisfiedLinkError.
      */
     private static String describeLibraryFailure(Throwable t) {
+        Throwable root = t;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        String detail = String.valueOf(root.getMessage()).replaceAll("\\s*\\n\\s*", " | ");
         return String.format("The serial port library (jSerialComm) could not be loaded: %s. "
-                + "os.arch=%s, java=%s %s. Fix: close every OpenPnP/Java process, delete the folders "
-                + "%%TEMP%%\\jSerialComm and %%USERPROFILE%%\\.jSerialComm, start again. The simulated "
-                + "interface does not need it.", String.valueOf(t.getMessage()).split("\n")[0],
-                System.getProperty("os.arch"), System.getProperty("java.vm.name"),
-                System.getProperty("java.version"));
+                + "os.arch=%s, java=%s %s, jSerialComm.library.path=%s. Fix: close every OpenPnP/Java "
+                + "process, delete %%TEMP%%\\jSerialComm, %%USERPROFILE%%\\.jSerialComm and "
+                + "%%USERPROFILE%%\\.openpnp2\\orion-native, start again; try JDK 21. The simulated "
+                + "interface does not need it.", detail, System.getProperty("os.arch"),
+                System.getProperty("java.vm.name"), System.getProperty("java.version"),
+                System.getProperty("jSerialComm.library.path", "(unset)"));
     }
 
     public static String[] listPorts() {
+        prepareNativeLibrary();
         try {
             SerialPort[] ports = SerialPort.getCommPorts();
             libraryProblem = null;
@@ -58,6 +124,7 @@ public class JSerialCommChannel implements SerialChannel {
             throw new OrionException(OrionException.Kind.TRANSPORT, "No serial port configured");
         }
         SerialPort p;
+        prepareNativeLibrary();
         try {
             p = SerialPort.getCommPort(portName);
         } catch (Throwable t) {

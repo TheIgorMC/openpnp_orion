@@ -180,6 +180,12 @@ Needs a JDK (the project targets Java 11) and Maven.
 
 ## Troubleshooting
 
+* **Serial library**: the Orion code copies the matching native serial library from the jar to
+  `%USERPROFILE%\.openpnp2\orion-native\...` and sets `jSerialComm.library.path` to it before first
+  use, so jSerialComm's own unpacking (which tries an ARM DLL first on Windows and can fail on a
+  locked or stale file) is bypassed. If you still see the red "Serial library" message, it prints the
+  real error text, `os.arch`, the Java version and the path in use: send me that line.
+
 * **"Cannot load native library ... jSerialComm.dll (Access denied / Can't load ARM 64-bit .dll)"**:
   jSerialComm unpacks its native DLL into `%TEMP%\jSerialComm\<version>` and `%USERPROFILE%\.jSerialComm`
   on first use. A stale, locked or wrong-architecture file there stops it from loading. Close every

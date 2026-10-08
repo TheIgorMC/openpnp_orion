@@ -12,6 +12,8 @@ public final class OrionMenu {
     private OrionMenu() {}
 
     public static JMenu create() {
+        // Before anything touches jSerialComm: point it at a ready native library (see the method).
+        org.openpnp.machine.orion.protocol.JSerialCommChannel.prepareNativeLibrary();
         JMenu menu = new JMenu("Orion");
 
         JMenuItem manager = new JMenuItem("Bus manager and debug...");
