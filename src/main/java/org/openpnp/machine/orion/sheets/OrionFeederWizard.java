@@ -233,7 +233,6 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         };
         pitchTf.getDocument().addDocumentListener(dl);
         peelRateTf.getDocument().addDocumentListener(dl);
-        locationPanel.setBaseLocation(feeder.getLocation());
         OrionManager.get().addListener(this);
         refreshState();
     }
@@ -380,7 +379,6 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         bind(UpdateStrategy.READ_WRITE, location, "lengthY", yTf, "text", lengthConverter);
         bind(UpdateStrategy.READ_WRITE, location, "lengthZ", zTf, "text", lengthConverter);
         bind(UpdateStrategy.READ_WRITE, location, "rotation", rotTf, "text", doubleConverter);
-        bind(UpdateStrategy.READ, location, "location", locationPanel, "baseLocation");
 
         addWrappedBinding(feeder, "followSlotPosition", followCb, "selected");
         addWrappedBinding(feeder, "visionMode", visionModeCb, "selectedItem");
@@ -392,7 +390,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         bind(UpdateStrategy.READ_WRITE, fid, "lengthX", fxTf, "text", lengthConverter);
         bind(UpdateStrategy.READ_WRITE, fid, "lengthY", fyTf, "text", lengthConverter);
         bind(UpdateStrategy.READ_WRITE, fid, "lengthZ", fzTf, "text", lengthConverter);
-        bind(UpdateStrategy.READ, fid, "location", fiducialPanel, "baseLocation");
+
     }
 
     @Override
