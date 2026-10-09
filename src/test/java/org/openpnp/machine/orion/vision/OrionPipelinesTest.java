@@ -31,4 +31,15 @@ public class OrionPipelinesTest {
         assertTrue(OrionPipelines.changedPixels(dark, lit) > 100);
         assertEquals(0, OrionPipelines.changedPixels(dark, dark.clone()), 0);
     }
+
+    @Test
+    void circleDetectionResultCountsAsLitWhenACircleIsFound() {
+        java.util.List<org.openpnp.vision.pipeline.CvStage.Result.Circle> none = new java.util.ArrayList<>();
+        java.util.List<org.openpnp.vision.pipeline.CvStage.Result.Circle> one = new java.util.ArrayList<>();
+        one.add(new org.openpnp.vision.pipeline.CvStage.Result.Circle(10, 12, 40));
+        assertEquals(0, OrionPipelines.circleCount(none));
+        assertEquals(1, OrionPipelines.circleCount(one));
+        assertEquals(-1, OrionPipelines.circleCount("not a circle list"));
+        assertEquals(-1, OrionPipelines.circleCount(java.util.Arrays.asList("x", "y")));
+    }
 }

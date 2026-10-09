@@ -241,11 +241,19 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
     private void testFiber() {
         OrionFeeder f = selectedOrTemp();
         if (f != null) {
-            OrionUi.run("Test fiber", () -> mgr.testFiber(f), r -> JOptionPane.showMessageDialog(this,
-                    String.format("Fiber off: %.0f\nFiber on:  %.0f\nRise:      %.0f   (threshold %.0f)\n\n"
-                            + "Verdict: %s", r[0], r[1], r[2], r[3],
-                            r[2] >= r[3] ? "DETECTED" : "NOT detected: brighter LED, bigger mask, or lower threshold"),
-                    "Fiber detection test", JOptionPane.INFORMATION_MESSAGE));
+            OrionUi.run("Test fiber", () -> mgr.testFiber(f), r -> {
+                boolean circles = r[4] > 0;
+                String values = circles
+                        ? String.format("Circles found with fiber off: %.0f\nCircles found with fiber on:  %.0f\n",
+                                r[5], r[6])
+                        : String.format("Fiber off: %.0f\nFiber on:  %.0f\nRise:      %.0f   (threshold %.0f)\n",
+                                r[0], r[1], r[2], r[3]);
+                String verdict = r[2] >= r[3] ? "DETECTED"
+                        : (circles ? "NOT detected: no circle of the set diameter with the fiber on"
+                                : "NOT detected: brighter LED, bigger mask, or lower threshold");
+                JOptionPane.showMessageDialog(this, values + "\nVerdict: " + verdict,
+                        "Fiber detection test", JOptionPane.INFORMATION_MESSAGE);
+            });
         }
     }
 

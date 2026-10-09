@@ -163,6 +163,11 @@ least *stagger* ms (default 150) between any two move commands, also when moving
 feeder motors never start together and load the 12 V rail. If a move fails halfway, every tape that
 was moved back is still sent forward again.
 
+Circle detection: if the fiber pipeline's result stage (named `results`) or its last stage returns
+circles (e.g. DetectCircularSymmetry with the fiber's diameter), the fiber counts as lit when at least
+one circle is found; the threshold is then irrelevant (found = 255, not found = 0) and the test dialog
+shows circle counts. A pipeline that ends in an image uses the brightness peak as before.
+
 Tuning (same tab): two normal OpenPnP pipelines, *fiber* and *tape movement*, edited with the
 pipeline editor. Both end in a gray image of a masked spot (circle mask stage `FiberSpot` /
 `TapeHole`, blur, gray). Fiber brightness = peak of that image; movement = pixels changed by more than

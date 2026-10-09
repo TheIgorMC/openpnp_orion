@@ -64,6 +64,82 @@ public final class OrionPipelines {
         }
     }
 
+    /** Score given to "a circle was found" so the usual brightness-rise threshold (0..255) applies. */
+    public static final double CIRCLE_FOUND_SCORE = 255;
+
+    /** One fiber measurement. */
+    public static class Reading {
+        /** 0..255. Brightness peak, or {@link #CIRCLE_FOUND_SCORE} / 0 when the pipeline detects circles. */
+        public final double score;
+        /** The pipeline ends in a circle detector: lit means a circle (of the set diameter) was found. */
+        public final boolean circleMode;
+        public final int circles;
+
+        Reading(double score, boolean circleMode, int circles) {
+            this.score = score;
+            this.circleMode = circleMode;
+            this.circles = circles;
+        }
+    }
+
+    /**
+     * Number of circles if the model is a circle detection result (a list of circles), else -1.
+     */
+    public static int circleCount(Object model) {
+        if (model instanceof java.util.List) {
+            java.util.List<?> l = (java.util.List<?>) model;
+            if (l.isEmpty()) {
+                return 0; // an empty list from a circle detector; indistinguishable, treated as 0 circles
+            }
+            for (Object o : l) {
+                if (!(o instanceof org.openpnp.vision.pipeline.CvStage.Result.Circle)) {
+                    return -1;
+                }
+            }
+            return l.size();
+        }
+        return -1;
+    }
+
+    /**
+     * Run the fiber pipeline. If its result stage ("results") or its last stage returns circles (e.g.
+     * DetectCircularSymmetry with the fiber's diameter), the fiber counts as lit when at least one circle is
+     * found; otherwise the brightness peak of the final image is used.
+     */
+    public static Reading fiberReading(CvPipeline template, Camera camera) throws Exception {
+        try (CvPipeline pipeline = template.clone()) {
+            pipeline.setProperty("camera", camera);
+            pipeline.process();
+            Object model = null;
+            org.openpnp.vision.pipeline.CvStage.Result named = pipeline.getResult("results");
+            if (named != null) {
+                model = named.model;
+            }
+            int n = circleCount(model);
+            if (n < 0) {
+                n = circleCount(pipeline.getWorkingModel());
+            }
+            if (n >= 0) {
+                return new Reading(n > 0 ? CIRCLE_FOUND_SCORE : 0, true, n);
+            }
+            Mat m = pipeline.getWorkingImage();
+            if (m == null) {
+                throw new Exception("The pipeline produced no image.");
+            }
+            Mat gray = new Mat();
+            if (m.channels() > 1) {
+                Imgproc.cvtColor(m, gray, Imgproc.COLOR_BGR2GRAY);
+            } else {
+                m.copyTo(gray);
+            }
+            try {
+                return new Reading(peak(gray), false, -1);
+            } finally {
+                gray.release();
+            }
+        }
+    }
+
     /** Brightness of the fiber spot: peak of the masked, blurred gray image. */
     public static double peak(Mat gray) {
         return Core.minMaxLoc(gray).maxVal;

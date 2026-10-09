@@ -479,14 +479,7 @@ public class OrionManager {
                 }
             }
         };
-        OrionIdentifier.Metric metric = () -> {
-            Mat m = OrionPipelines.grab(st.getFiberPipeline(), cam);
-            try {
-                return OrionPipelines.peak(m);
-            } finally {
-                m.release();
-            }
-        };
+        OrionIdentifier.Metric metric = () -> OrionPipelines.fiberReading(st.getFiberPipeline(), cam).score;
         return new OrionIdentifier.FiberProbe<>(all, fibers, metric, st.getFiberThreshold(),
                 st.getSettleMs());
     }
@@ -512,22 +505,22 @@ public class OrionManager {
                 st.getSettleMs(), st.getStaggerMs());
     }
 
-    /** Tuning helper: measure the fiber spot with the unit's fiber off and on. Camera must already be over the spot. */
+    /**
+     * Tuning helper: measure the fiber spot with the unit's fiber off and on. Camera must already be over
+     * the spot. Returns {off, on, rise, threshold, circleMode (1/0), circlesOff, circlesOn}.
+     */
     public double[] testFiber(OrionFeeder feeder) throws Exception {
         OrionSettings st = getSettings();
         Camera cam = headCamera();
         try {
             feeder.setFiber(false);
             Thread.sleep(st.getSettleMs());
-            Mat a = OrionPipelines.grab(st.getFiberPipeline(), cam);
-            double off = OrionPipelines.peak(a);
-            a.release();
+            OrionPipelines.Reading off = OrionPipelines.fiberReading(st.getFiberPipeline(), cam);
             feeder.setFiber(true);
             Thread.sleep(st.getSettleMs());
-            Mat b = OrionPipelines.grab(st.getFiberPipeline(), cam);
-            double on = OrionPipelines.peak(b);
-            b.release();
-            return new double[] {off, on, on - off, st.getFiberThreshold()};
+            OrionPipelines.Reading on = OrionPipelines.fiberReading(st.getFiberPipeline(), cam);
+            return new double[] {off.score, on.score, on.score - off.score, st.getFiberThreshold(),
+                    on.circleMode ? 1 : 0, off.circles, on.circles};
         } finally {
             feeder.setFiber(false);
         }
