@@ -74,6 +74,22 @@ and *Bind to unit*, read the unit's own values (e.g. set with the Python GUI) an
 "Unit reports"; *Read from unit* does the same on demand and pushes nothing. A feeder created by an
 earlier build may still hold a pitch of 4: press *Read from unit* once (or delete and recreate it).
 
+## Tape position from a sprocket hole (every pick)
+
+The fiducial check corrects the feeder's position across the rail (X); the tape position along the tape
+(Y, with the rail along X) depends on where the feed stopped (the firmware accepts +-0.13 mm), tape slack and
+peel tension. With *Vision: tape position from a sprocket hole* switched on, after each feed the camera goes to
+the pick location, finds the sprocket holes with a circle detector (the same stage the fiber test uses, 1.5 mm
+hole, shared hole pipeline) and measures how far the hole row moved since the pick location was taught. Holes
+repeat every 4 mm, so the shift is taken modulo the pitch (+-2 mm range, any hole of the row works). The shift is
+added to the pick location along the tape axis. If no hole is found, or the shift exceeds the limit (default
+0.8 mm), the pick uses the taught position and a warning goes to the Orion log: a job is never stopped for it.
+
+Setup per feeder: feed so a pocket sits at the pick location, put the camera over it (hole in view),
+press *Teach hole here*. *Measure now* shows the current shift. Modes: off, after every feed, or after the first
+feed of each job. Tune the pipeline and hole diameter / search radius in the Feeder identification tab. It
+costs one camera move and capture per pick, so use it where the tolerance matters (small parts).
+
 ## Part <-> component id on the unit
 
 If your OpenPnP part ids are plain numbers (e.g. `1234`, also zero padded like `0042`) the unit's

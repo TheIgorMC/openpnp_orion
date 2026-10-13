@@ -31,6 +31,21 @@ public final class OrionPipelines {
         }
     }
 
+    /** Sprocket hole detection (same circle detector the fiber test uses), diameter and range set from code. */
+    public static CvPipeline defaultHolePipeline() {
+        try {
+            return new CvPipeline(
+                    "<cv-pipeline><stages>"
+                    + "<cv-stage class=\"org.openpnp.vision.pipeline.stages.ImageCapture\" name=\"capture\" enabled=\"true\" default-light=\"true\" settle-first=\"true\" count=\"1\"/>"
+                    + "<cv-stage class=\"org.openpnp.vision.pipeline.stages.BlurGaussian\" name=\"blur\" enabled=\"true\" kernel-size=\"5\"/>"
+                    + "<cv-stage class=\"org.openpnp.vision.pipeline.stages.ConvertColor\" name=\"gray\" enabled=\"true\" conversion=\"Bgr2Gray\"/>"
+                    + "<cv-stage class=\"org.openpnp.vision.pipeline.stages.DetectCircularSymmetry\" name=\"results\" enabled=\"true\" min-diameter=\"10\" max-diameter=\"100\" max-distance=\"100\" max-target-count=\"6\" min-symmetry=\"1.2\" corr-symmetry=\"0.2\" property-name=\"sprocketHole\" outer-margin=\"0.3\" inner-margin=\"0.1\" sub-sampling=\"8\" super-sampling=\"1\" symmetry-score=\"RingMedianVarianceVsRingVarianceSum\" diagnostics=\"false\"/>"
+                    + "</stages></cv-pipeline>");
+        } catch (Exception e) {
+            throw new Error(e);
+        }
+    }
+
     public static CvPipeline defaultMovementPipeline() {
         try {
             return new CvPipeline(

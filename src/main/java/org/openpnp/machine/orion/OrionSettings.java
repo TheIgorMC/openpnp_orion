@@ -207,6 +207,56 @@ public class OrionSettings {
     @Element(required = false)
     private CvPipeline movementPipeline;
 
+    /** Sprocket hole detection for the per-pick tape position check. */
+    @Element(required = false)
+    private CvPipeline holePipeline;
+
+    @Attribute(required = false)
+    private double holeDiameterMm = 1.5;
+
+    /** Only holes within this distance of the camera centre are considered. */
+    @Attribute(required = false)
+    private double holeSearchMm = 6.0;
+
+    /** A hole counts as part of the taught row if it is this close (mm) across the tape to the taught one. */
+    @Attribute(required = false)
+    private double holeLateralTolMm = 1.0;
+
+    public synchronized CvPipeline getHolePipeline() {
+        if (holePipeline == null) {
+            holePipeline = OrionPipelines.defaultHolePipeline();
+        }
+        return holePipeline;
+    }
+
+    public synchronized void resetHolePipeline() {
+        holePipeline = OrionPipelines.defaultHolePipeline();
+    }
+
+    public double getHoleDiameterMm() {
+        return holeDiameterMm;
+    }
+
+    public void setHoleDiameterMm(double v) {
+        holeDiameterMm = v;
+    }
+
+    public double getHoleSearchMm() {
+        return holeSearchMm;
+    }
+
+    public void setHoleSearchMm(double v) {
+        holeSearchMm = v;
+    }
+
+    public double getHoleLateralTolMm() {
+        return holeLateralTolMm;
+    }
+
+    public void setHoleLateralTolMm(double v) {
+        holeLateralTolMm = v;
+    }
+
     public IdentifyMethod getIdentifyMethod() {
         return identifyMethod;
     }

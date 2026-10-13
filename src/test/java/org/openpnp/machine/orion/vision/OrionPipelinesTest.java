@@ -42,4 +42,9 @@ public class OrionPipelinesTest {
         assertEquals(-1, OrionPipelines.circleCount("not a circle list"));
         assertEquals(-1, OrionPipelines.circleCount(java.util.Arrays.asList("x", "y")));
     }
+
+    @Test
+    void holePipelineParsesAndDetectsCircles() {
+        assertEquals(4, OrionPipelines.defaultHolePipeline().getStages().size());
+    }
 }

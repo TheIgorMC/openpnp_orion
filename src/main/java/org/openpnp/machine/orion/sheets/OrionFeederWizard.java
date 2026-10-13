@@ -61,6 +61,11 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
     private final LocationButtonsPanel fiducialPanel;
     private final JLabel visionResult = new JLabel(" ");
     private final JLabel slotLabel = new JLabel(" ");
+    private final JComboBox<OrionFeeder.HoleMode> holeModeCb = new JComboBox<>(OrionFeeder.HoleMode.values());
+    private final JComboBox<org.openpnp.machine.orion.vision.OrionHoleVision.Axis> tapeAxisCb = new JComboBox<>(
+            org.openpnp.machine.orion.vision.OrionHoleVision.Axis.values());
+    private final JTextField maxHoleTf = new JTextField(6);
+    private final JLabel holeResult = new JLabel(" ");
     private final JTextField slotTf = new JTextField(7);
     private final javax.swing.JCheckBox followCb = new javax.swing.JCheckBox(
             "Shift pick X when the unit's slot X changes");
@@ -185,6 +190,23 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         vb.add(visionResult);
         OrionUi.row(vis, 5, "", vb);
         contentPanel.add(vis);
+
+        // ---- tape position from a sprocket hole
+        JPanel hole = OrionUi.grid();
+        hole.setBorder(BorderFactory.createTitledBorder("Vision: tape position from a sprocket hole (every pick)"));
+        OrionUi.row(hole, 0, "Check", holeModeCb);
+        OrionUi.row(hole, 1, "Tape runs along machine axis", tapeAxisCb);
+        OrionUi.row(hole, 2, "Reject shifts larger than (mm)", maxHoleTf);
+        JButton teachHole = new JButton("Teach hole here");
+        teachHole.setToolTipText("Camera over the pick pocket after a feed: store the nearest sprocket hole "
+                + "as the reference");
+        teachHole.addActionListener(e -> OrionUi.run("Teach hole", () -> feeder.teachHoleHere(),
+                l -> holeResult.setText(String.format("Reference hole at X=%.3f Y=%.3f", l.getX(), l.getY()))));
+        JButton measureHole = new JButton("Measure now");
+        measureHole.addActionListener(e -> OrionUi.run("Measure hole", () -> feeder.measureHoleShift(),
+                d -> holeResult.setText(String.format("Tape is %+.3f mm from where it was taught", d))));
+        OrionUi.row(hole, 3, "", OrionUi.line(teachHole, measureHole, holeResult));
+        contentPanel.add(hole);
 
         // ---- live controls
         JPanel live = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
@@ -381,6 +403,9 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         bind(UpdateStrategy.READ_WRITE, location, "rotation", rotTf, "text", doubleConverter);
 
         addWrappedBinding(feeder, "followSlotPosition", followCb, "selected");
+        addWrappedBinding(feeder, "holeMode", holeModeCb, "selectedItem");
+        addWrappedBinding(feeder, "tapeAxis", tapeAxisCb, "selectedItem");
+        addWrappedBinding(feeder, "maxHoleCorrectionMm", maxHoleTf, "text", plain);
         addWrappedBinding(feeder, "visionMode", visionModeCb, "selectedItem");
         addWrappedBinding(feeder, "fiducialPart", fiducialPartCb, "selectedItem");
         addWrappedBinding(feeder, "visionXOnly", xOnlyCb, "selected");

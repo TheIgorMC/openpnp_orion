@@ -111,6 +111,45 @@ public class OrionFeeder extends ReferenceFeeder {
     @Attribute(required = false)
     protected double maxCorrectionMm = 2.0;
 
+    // ---- vision: tape position from the sprocket holes (every pick)
+
+    public enum HoleMode {
+        Off("Off"),
+        EveryFeed("After every feed"),
+        FirstFeedOfJob("After the first feed of each job");
+
+        private final String label;
+
+        HoleMode(String label) {
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    @Attribute(required = false)
+    protected HoleMode holeMode = HoleMode.Off;
+
+    /** Direction the tape runs in machine axes (rail along X: tape along Y). */
+    @Attribute(required = false)
+    protected org.openpnp.machine.orion.vision.OrionHoleVision.Axis tapeAxis =
+            org.openpnp.machine.orion.vision.OrionHoleVision.Axis.Y;
+
+    /** A sprocket hole of the taught row, seen while the taught pocket sat at the pick location. */
+    @Element(required = false)
+    protected Location holeNominal;
+
+    /** Corrections bigger than this are rejected as a bad detection. */
+    @Attribute(required = false)
+    protected double maxHoleCorrectionMm = 0.8;
+
+    /** Tape shift measured at the last pick, along the tape axis, mm. Not persisted. */
+    private transient double holeShiftMm;
+    private transient boolean holeDoneThisJob;
+
     /** Correction found by the last detection, added to the taught pick location. Not persisted. */
     private transient Location visionDelta;
     private transient boolean visionDoneThisJob;
@@ -469,6 +508,7 @@ public class OrionFeeder extends ReferenceFeeder {
         }
         refineByVisionIfNeeded();
         runMove(Move.FEED);
+        checkTapeByHolesIfNeeded();
     }
 
     @Override
@@ -485,7 +525,133 @@ public class OrionFeeder extends ReferenceFeeder {
         if (visionDelta != null) {
             l = l.add(visionDelta);
         }
+        if (holeShiftMm != 0) {
+            l = l.add(tapeAxis == org.openpnp.machine.orion.vision.OrionHoleVision.Axis.Y
+                    ? new Location(LengthUnit.Millimeters, 0, holeShiftMm, 0, 0)
+                    : new Location(LengthUnit.Millimeters, holeShiftMm, 0, 0, 0));
+        }
         return l;
+    }
+
+    // ---- sprocket hole vision
+
+    public HoleMode getHoleMode() {
+        return holeMode;
+    }
+
+    public void setHoleMode(HoleMode m) {
+        holeMode = m;
+    }
+
+    public org.openpnp.machine.orion.vision.OrionHoleVision.Axis getTapeAxis() {
+        return tapeAxis;
+    }
+
+    public void setTapeAxis(org.openpnp.machine.orion.vision.OrionHoleVision.Axis a) {
+        tapeAxis = a;
+    }
+
+    public Location getHoleNominal() {
+        return holeNominal;
+    }
+
+    public void setHoleNominal(Location l) {
+        holeNominal = l;
+    }
+
+    public double getMaxHoleCorrectionMm() {
+        return maxHoleCorrectionMm;
+    }
+
+    public void setMaxHoleCorrectionMm(double v) {
+        maxHoleCorrectionMm = v;
+    }
+
+    public double getHoleShiftMm() {
+        return holeShiftMm;
+    }
+
+    /** Apply a measured shift (also used by tests). */
+    public void applyHoleShift(double mm) {
+        holeShiftMm = mm;
+    }
+
+    /** Where the camera looks: the taught pick location, at the camera height the hole was taught at. */
+    private Location holeCameraLocation() {
+        Location l = location.convertToUnits(LengthUnit.Millimeters);
+        Location h = holeNominal.convertToUnits(LengthUnit.Millimeters);
+        return new Location(LengthUnit.Millimeters, l.getX(), l.getY(), h.getZ(), l.getRotation());
+    }
+
+    /**
+     * Look at the holes next to the pick location and return how far the tape sits from where it was when the
+     * pick location was taught (mm along the tape, hole-pitch wrapped). Throws if no hole is found.
+     */
+    public synchronized double measureHoleShift() throws Exception {
+        if (holeNominal == null) {
+            throw new Exception("Feeder '" + getName() + "': teach a sprocket hole first (Teach hole here).");
+        }
+        OrionSettings st = OrionManager.get().getSettings();
+        org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
+        org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, holeCameraLocation());
+        java.util.List<Location> holes = org.openpnp.machine.orion.vision.OrionHoleVision.findHoles(
+                st.getHolePipeline(), cam, st.getHoleDiameterMm(), st.getHoleSearchMm());
+        Double r = org.openpnp.machine.orion.vision.OrionHoleVision.residual(holes, holeNominal, tapeAxis,
+                st.getHoleLateralTolMm());
+        if (r == null) {
+            throw new Exception(String.format("Feeder '%s': no sprocket hole found next to the pick location "
+                    + "(%d circle(s) seen, none in the taught row).", getName(), holes.size()));
+        }
+        if (Math.abs(r) > maxHoleCorrectionMm) {
+            throw new Exception(String.format("Feeder '%s': tape is %.2f mm off, more than the %.2f mm limit.",
+                    getName(), r, maxHoleCorrectionMm));
+        }
+        return r;
+    }
+
+    /** Remember the hole nearest to the camera centre as the reference (pocket is at the pick location). */
+    public synchronized Location teachHoleHere() throws Exception {
+        OrionSettings st = OrionManager.get().getSettings();
+        org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
+        java.util.List<Location> holes = org.openpnp.machine.orion.vision.OrionHoleVision.findHoles(
+                st.getHolePipeline(), cam, st.getHoleDiameterMm(), st.getHoleSearchMm());
+        if (holes.isEmpty()) {
+            throw new Exception("No sprocket hole found under the camera. Tune the hole pipeline first.");
+        }
+        Location centre = cam.getLocation().convertToUnits(LengthUnit.Millimeters);
+        Location best = null;
+        for (Location h : holes) {
+            if (best == null || h.getLinearDistanceTo(centre) < best.getLinearDistanceTo(centre)) {
+                best = h;
+            }
+        }
+        holeNominal = best.convertToUnits(LengthUnit.Millimeters);
+        holeShiftMm = 0;
+        return holeNominal;
+    }
+
+    private void checkTapeByHolesIfNeeded() throws Exception {
+        holeShiftMm = 0; // the tape just moved, an older measurement does not apply
+        if (holeMode == HoleMode.Off || holeNominal == null) {
+            return;
+        }
+        if (holeMode == HoleMode.FirstFeedOfJob && holeDoneThisJob) {
+            return;
+        }
+        if (!Configuration.get().getMachine().isHomed()) {
+            return;
+        }
+        try {
+            holeShiftMm = measureHoleShift();
+            holeDoneThisJob = true;
+            Logger.debug("Orion feeder {}: tape shift {} mm", getName(), holeShiftMm);
+        } catch (Exception e) {
+            // Never stop a job for this: pick at the taught position and say so.
+            Logger.warn("Orion feeder {}: tape check by sprocket hole failed: {}", getName(), e.getMessage());
+            OrionManager.get().addLog(rail,
+                    org.openpnp.machine.orion.protocol.OrionBusListener.Direction.ERROR,
+                    "tape check failed: " + e.getMessage());
+        }
     }
 
     public double getTaughtSlotXMm() {
@@ -539,6 +705,8 @@ public class OrionFeeder extends ReferenceFeeder {
     public void prepareForJob(boolean visit) throws Exception {
         visionDelta = null;
         visionDoneThisJob = false;
+        holeShiftMm = 0;
+        holeDoneThisJob = false;
         checkRailVerified();
         super.prepareForJob(visit);
     }

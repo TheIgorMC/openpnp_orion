@@ -188,6 +188,14 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                 + "threshold between 'off' and 'on'. The spot / hole offsets from the large fiducial are set "
                 + "per rail below.</body></html>");
         OrionUi.row(p, 6, "", hint);
+        OrionUi.row(p, 7, "Sprocket hole detection", OrionUi.line(
+                button("Edit hole pipeline...", () -> editPipeline("Orion sprocket hole",
+                        s.getHolePipeline())),
+                button("Reset", () -> s.resetHolePipeline()),
+                new JLabel("hole diameter (mm)"),
+                spinner(s.getHoleDiameterMm(), 0.5, 5, 0.1, s::setHoleDiameterMm),
+                new JLabel("search radius (mm)"),
+                spinner(s.getHoleSearchMm(), 2, 20, 0.5, s::setHoleSearchMm)));
         return p;
     }
 

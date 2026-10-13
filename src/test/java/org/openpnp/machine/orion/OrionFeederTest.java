@@ -389,4 +389,45 @@ public class OrionFeederTest {
         assertEquals(777, sim().getFeeders().get(0).componentId);
         assertEquals(Integer.valueOf(777), mgr.getSettings().componentFor("777"));
     }
+
+    @Test
+    void holeShiftMovesThePickAlongTheTapeAxisOnly() throws Exception {
+        OrionFeeder f = bound(0);
+        org.openpnp.model.LengthUnit mm = org.openpnp.model.LengthUnit.Millimeters;
+        f.setLocation(new org.openpnp.model.Location(mm, 100, 50, -2, 0));
+        f.applyHoleShift(0.15);
+        assertEquals(50.15, f.getPickLocation().getY(), 1e-9);
+        assertEquals(100.0, f.getPickLocation().getX(), 1e-9);
+        f.setTapeAxis(org.openpnp.machine.orion.vision.OrionHoleVision.Axis.X);
+        assertEquals(100.15, f.getPickLocation().getX(), 1e-9);
+        assertEquals(50.0, f.getPickLocation().getY(), 1e-9);
+        f.prepareForJob(false); // a new job starts without an old shift
+        assertEquals(0.0, f.getHoleShiftMm());
+    }
+
+    @Test
+    void holeVisionSettingsSurviveSaveAndReload() throws Exception {
+        OrionFeeder f = bound(0);
+        org.openpnp.model.Package pkg = new org.openpnp.model.Package("hole-pkg");
+        Configuration.get().addPackage(pkg);
+        org.openpnp.model.Part part = new org.openpnp.model.Part("hole-part");
+        part.setPackage(pkg);
+        Configuration.get().addPart(part);
+        f.setPart(part);
+        f.setHoleMode(OrionFeeder.HoleMode.EveryFeed);
+        f.setHoleNominal(new org.openpnp.model.Location(org.openpnp.model.LengthUnit.Millimeters, 103.5, 50, 20, 0));
+        mgr.getSettings().getHolePipeline();
+        Configuration.get().save();
+        Configuration.initialize(dir);
+        Configuration.get().load();
+        OrionFeeder back = null;
+        for (org.openpnp.spi.Feeder x : Configuration.get().getMachine().getFeeders()) {
+            if (x instanceof OrionFeeder) {
+                back = (OrionFeeder) x;
+            }
+        }
+        assertEquals(OrionFeeder.HoleMode.EveryFeed, back.getHoleMode());
+        assertEquals(103.5, back.getHoleNominal().getX(), 1e-9);
+        assertEquals(4, mgr.getSettings().getHolePipeline().getStages().size());
+    }
 }
