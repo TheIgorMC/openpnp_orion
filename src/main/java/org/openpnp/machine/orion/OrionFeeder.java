@@ -168,10 +168,10 @@ public class OrionFeeder extends ReferenceFeeder {
 
     /** Expected pocket outline (mm) used to pick the right rectangle in the image. */
     @Attribute(required = false)
-    protected double pocketWidthMm = 0.7;
+    protected double pocketWidthMm = 0; // 0 = any size
 
     @Attribute(required = false)
-    protected double pocketLengthMm = 1.3;
+    protected double pocketLengthMm = 0;
 
     @Attribute(required = false)
     protected double pocketSizeTolPct = 35;
@@ -760,16 +760,17 @@ public class OrionFeeder extends ReferenceFeeder {
         Location base = basePickLocation().convertToUnits(LengthUnit.Millimeters);
         org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, new Location(LengthUnit.Millimeters,
                 base.getX(), base.getY(), pocketCamZ(cam), base.getRotation()));
-        java.util.List<org.openpnp.machine.orion.vision.OrionPocketVision.Candidate> found =
-                org.openpnp.machine.orion.vision.OrionPocketVision.findPockets(st.getPocketPipeline(), cam);
+        org.openpnp.machine.orion.vision.OrionPocketVision.Found res =
+                org.openpnp.machine.orion.vision.OrionPocketVision.find(st.getPocketPipeline(), cam);
+        java.util.List<org.openpnp.machine.orion.vision.OrionPocketVision.Candidate> found = res.candidates;
         org.openpnp.machine.orion.vision.OrionPocketVision.Candidate c =
                 org.openpnp.machine.orion.vision.OrionPocketVision.select(found, pocketWidthMm, pocketLengthMm,
                         pocketSizeTolPct / 100.0, base);
         if (c == null) {
-            throw new Exception(String.format("Feeder '%s': no pocket of about %.2f x %.2f mm found. "
-                    + "Rectangles seen: %s. Set the size to what the pipeline sees, or tune the pipeline.",
-                    getName(), pocketWidthMm, pocketLengthMm,
-                    org.openpnp.machine.orion.vision.OrionPocketVision.describe(found)));
+            throw new Exception(String.format("Feeder '%s': no pocket found%s. Rectangles seen: %s (%s). "
+                    + "Set the size to 0 to accept any, or to what the pipeline sees.", getName(),
+                    pocketWidthMm > 0 ? String.format(" of about %.2f x %.2f mm", pocketWidthMm, pocketLengthMm) : "",
+                    org.openpnp.machine.orion.vision.OrionPocketVision.describe(found), res.diagnostics));
         }
         lastPocketReport = String.format("pick location X=%.3f Y=%.3f; camera at X=%.3f Y=%.3f; saw %s",
                 base.getX(), base.getY(), cam.getLocation().convertToUnits(LengthUnit.Millimeters).getX(),
@@ -815,16 +816,16 @@ public class OrionFeeder extends ReferenceFeeder {
     public synchronized Location teachPocketHere() throws Exception {
         OrionSettings st = OrionManager.get().getSettings();
         org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
-        java.util.List<org.openpnp.machine.orion.vision.OrionPocketVision.Candidate> found =
-                org.openpnp.machine.orion.vision.OrionPocketVision.findPockets(st.getPocketPipeline(), cam);
+        org.openpnp.machine.orion.vision.OrionPocketVision.Found res =
+                org.openpnp.machine.orion.vision.OrionPocketVision.find(st.getPocketPipeline(), cam);
+        java.util.List<org.openpnp.machine.orion.vision.OrionPocketVision.Candidate> found = res.candidates;
         org.openpnp.machine.orion.vision.OrionPocketVision.Candidate c =
                 org.openpnp.machine.orion.vision.OrionPocketVision.select(found, pocketWidthMm, pocketLengthMm,
                         pocketSizeTolPct / 100.0, cam.getLocation());
         if (c == null) {
-            throw new Exception(String.format("No pocket of about %.2f x %.2f mm found under the camera. "
-                    + "Rectangles seen: %s. Set the size to what the pipeline sees, or tune the pipeline.",
-                    pocketWidthMm, pocketLengthMm,
-                    org.openpnp.machine.orion.vision.OrionPocketVision.describe(found)));
+            throw new Exception(String.format("No pocket found under the camera. Rectangles seen: %s (%s). "
+                    + "Set the size to 0 to accept any, or to what the pipeline sees.",
+                    org.openpnp.machine.orion.vision.OrionPocketVision.describe(found), res.diagnostics));
         }
         Location base = basePickLocation().convertToUnits(LengthUnit.Millimeters);
         pocketBias = new Location(LengthUnit.Millimeters, c.center.getX() - base.getX(),

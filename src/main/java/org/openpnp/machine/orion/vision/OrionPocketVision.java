@@ -80,44 +80,96 @@ public final class OrionPocketVision {
         return sb.length() == 0 ? "none" : sb.toString() + " mm";
     }
 
-    /** Run the pocket pipeline on the camera; its "results" stage (or last stage) must give rotated rectangles. */
-    public static List<Candidate> findPockets(CvPipeline template, Camera camera) throws Exception {
-        List<Candidate> out = new ArrayList<>();
+    /** What a pipeline run produced: the candidates, and a note of what each stage returned (for diagnosis). */
+    public static class Found {
+        public final List<Candidate> candidates = new ArrayList<>();
+        public String diagnostics = "";
+    }
+
+    /**
+     * Collect rectangle-like things from a stage result, as {centreX, centreY, width, height} in pixels. Accepts
+     * rotated rectangles, plain rectangles, contours (their minimum-area rectangle), circles, and lists or
+     * single objects of those.
+     */
+    public static void extract(Object model, List<double[]> out) {
+        if (model == null) {
+            return;
+        }
+        if (model instanceof List) {
+            for (Object o : (List<?>) model) {
+                extract(o, out);
+            }
+        } else if (model instanceof RotatedRect) {
+            RotatedRect r = (RotatedRect) model;
+            out.add(new double[] {r.center.x, r.center.y, r.size.width, r.size.height});
+        } else if (model instanceof org.opencv.core.Rect) {
+            org.opencv.core.Rect r = (org.opencv.core.Rect) model;
+            out.add(new double[] {r.x + r.width / 2.0, r.y + r.height / 2.0, r.width, r.height});
+        } else if (model instanceof org.opencv.core.MatOfPoint) {
+            org.opencv.core.Point[] pts = ((org.opencv.core.MatOfPoint) model).toArray();
+            if (pts.length >= 3) {
+                RotatedRect r = org.opencv.imgproc.Imgproc.minAreaRect(new org.opencv.core.MatOfPoint2f(pts));
+                out.add(new double[] {r.center.x, r.center.y, r.size.width, r.size.height});
+            }
+        } else if (model instanceof CvStage.Result.Circle) {
+            CvStage.Result.Circle c = (CvStage.Result.Circle) model;
+            out.add(new double[] {c.x, c.y, c.diameter, c.diameter});
+        }
+    }
+
+    /**
+     * Run the pocket pipeline on the camera. Rectangles are taken from the stage named "results" if it gave any,
+     * otherwise from the last stage that did, so a pipeline that was edited still works.
+     */
+    public static Found find(CvPipeline template, Camera camera) throws Exception {
+        Found found = new Found();
         try (CvPipeline pipeline = template.clone()) {
             pipeline.setProperty("camera", camera);
             pipeline.process();
-            Object model = null;
-            CvStage.Result named = pipeline.getResult("results");
+            List<double[]> px = new ArrayList<>();
+            StringBuilder diag = new StringBuilder();
+            CvStage named = pipeline.getStage("results");
+            List<CvStage> order = new ArrayList<>();
             if (named != null) {
-                model = named.model;
+                order.add(named);
             }
-            if (!(model instanceof List)) {
-                model = pipeline.getWorkingModel();
-            }
-            if (model instanceof List) {
-                Location o = VisionUtils.getPixelCenterOffsets(camera, 0, 0);
-                for (Object r : (List<?>) model) {
-                    if (r instanceof org.opencv.core.Rect) { // axis-aligned rectangles: centre, not the top-left corner
-                        org.opencv.core.Rect rc = (org.opencv.core.Rect) r;
-                        Location c = VisionUtils.getPixelLocation(camera, rc.x + rc.width / 2.0,
-                                rc.y + rc.height / 2.0);
-                        double w = VisionUtils.getPixelCenterOffsets(camera, rc.width, 0)
-                                .getLinearLengthTo(o).convertToUnits(LengthUnit.Millimeters).getValue();
-                        double h = VisionUtils.getPixelCenterOffsets(camera, 0, rc.height)
-                                .getLinearLengthTo(o).convertToUnits(LengthUnit.Millimeters).getValue();
-                        out.add(new Candidate(c, w, h));
-                    } else if (r instanceof RotatedRect) {
-                        RotatedRect rr = (RotatedRect) r;
-                        Location c = VisionUtils.getPixelLocation(camera, rr.center.x, rr.center.y);
-                        double w = VisionUtils.getPixelCenterOffsets(camera, rr.size.width, 0)
-                                .getLinearLengthTo(o).convertToUnits(LengthUnit.Millimeters).getValue();
-                        double h = VisionUtils.getPixelCenterOffsets(camera, 0, rr.size.height)
-                                .getLinearLengthTo(o).convertToUnits(LengthUnit.Millimeters).getValue();
-                        out.add(new Candidate(c, w, h));
-                    }
+            List<CvStage> stages = pipeline.getStages();
+            for (int i = stages.size() - 1; i >= 0; i--) {
+                if (stages.get(i) != named) {
+                    order.add(stages.get(i));
                 }
             }
+            String used = null;
+            for (CvStage st : order) {
+                CvStage.Result r = pipeline.getResult(st);
+                Object m = r == null ? null : r.model;
+                List<double[]> here = new ArrayList<>();
+                extract(m, here);
+                if (m != null) {
+                    diag.append(String.format("%s: %s (%d rect)  ", st.getName(), m.getClass().getSimpleName(),
+                            here.size()));
+                }
+                if (px.isEmpty() && !here.isEmpty()) {
+                    px = here;
+                    used = st.getName();
+                }
+            }
+            found.diagnostics = used == null ? "no stage returned a rectangle: " + diag : "from stage " + used;
+            Location o = VisionUtils.getPixelCenterOffsets(camera, 0, 0);
+            for (double[] r : px) {
+                Location c = VisionUtils.getPixelLocation(camera, r[0], r[1]);
+                double w = VisionUtils.getPixelCenterOffsets(camera, r[2], 0).getLinearLengthTo(o)
+                        .convertToUnits(LengthUnit.Millimeters).getValue();
+                double h = VisionUtils.getPixelCenterOffsets(camera, 0, r[3]).getLinearLengthTo(o)
+                        .convertToUnits(LengthUnit.Millimeters).getValue();
+                found.candidates.add(new Candidate(c, w, h));
+            }
         }
-        return out;
+        return found;
+    }
+
+    /** Candidates only. */
+    public static List<Candidate> findPockets(CvPipeline template, Camera camera) throws Exception {
+        return find(template, camera).candidates;
     }
 }

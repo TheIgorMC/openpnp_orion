@@ -81,4 +81,43 @@ public class OrionPocketVisionTest {
         CvPipeline back = new CvPipeline(p.toXmlString());
         assertEquals(7, back.getStages().size());
     }
+
+    @Test
+    void extractAcceptsAnyCommonRectangleFormAndUsesTheCentre() {
+        java.util.List<double[]> out = new java.util.ArrayList<>();
+        // a single rotated rectangle (not in a list)
+        OrionPocketVision.extract(new RotatedRect(new Point(100, 50), new org.opencv.core.Size(30, 10), 15), out);
+        assertEquals(1, out.size());
+        assertArrayEquals(new double[] {100, 50, 30, 10}, out.get(0), 1e-9);
+
+        // a plain Rect: the centre, not the top-left corner
+        out.clear();
+        OrionPocketVision.extract(new org.opencv.core.Rect(10, 20, 30, 40), out);
+        assertArrayEquals(new double[] {25, 40, 30, 40}, out.get(0), 1e-9);
+
+        // contours: their minimum-area rectangle
+        out.clear();
+        org.opencv.core.MatOfPoint square = new org.opencv.core.MatOfPoint(new Point(0, 0), new Point(40, 0),
+                new Point(40, 20), new Point(0, 20));
+        OrionPocketVision.extract(Arrays.asList(square, square), out);
+        assertEquals(2, out.size());
+        assertEquals(20, out.get(0)[0], 0.6);
+        assertEquals(10, out.get(0)[1], 0.6);
+
+        // circles, nested lists, and things that are not rectangles
+        out.clear();
+        OrionPocketVision.extract(Arrays.asList(Arrays.asList(
+                new org.openpnp.vision.pipeline.CvStage.Result.Circle(5, 6, 8)), "text", 42), out);
+        assertEquals(1, out.size());
+        assertArrayEquals(new double[] {5, 6, 8, 8}, out.get(0), 1e-9);
+        out.clear();
+        OrionPocketVision.extract(null, out);
+        assertTrue(out.isEmpty());
+    }
+
+    @Test
+    void anySizeIsAcceptedWhenSizeIsZeroAndTheNearestWins() {
+        List<Candidate> c = Arrays.asList(new Candidate(loc(5, 5), 3, 4), new Candidate(loc(1, 1), 0.2, 0.9));
+        assertEquals(1.0, OrionPocketVision.select(c, 0, 0, 0.35, loc(0.8, 1.2)).center.getX(), 1e-9);
+    }
 }

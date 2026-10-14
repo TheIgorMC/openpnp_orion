@@ -203,7 +203,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         OrionUi.row(hole, 1, "Look at", targetCb);
         OrionUi.row(hole, 2, "Tape runs along machine axis", tapeAxisCb);
         OrionUi.row(hole, 3, "Reject shifts larger than (mm)", maxHoleTf);
-        OrionUi.row(hole, 4, "Pocket size W x L (mm), tolerance %", OrionUi.line(pocketWTf, new JLabel("x"),
+        OrionUi.row(hole, 4, "Pocket size W x L (mm, 0 = any), tolerance %", OrionUi.line(pocketWTf, new JLabel("x"),
                 pocketLTf, pocketTolTf));
         OrionUi.row(hole, 5, "", acrossCb);
         JButton teachHole = new JButton("Teach here");

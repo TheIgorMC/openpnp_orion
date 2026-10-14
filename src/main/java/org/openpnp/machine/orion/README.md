@@ -95,11 +95,13 @@ costs one camera move and capture per pick, so use it where the tolerance matter
 *Look at: Pocket / part* centres the pick on what the camera sees instead of trusting the tape position. After
 each feed the camera goes to the pick location, the **pocket pipeline** (capture, blur, gray, Otsu threshold with
 dark objects white, contours, size-filtered, minimum-area rectangles as the `results` stage) finds rectangles, the
-one that matches the **pocket size W x L** (+- tolerance) and lies nearest to the pick location is taken, and the
+one that matches the **pocket size W x L** (+- tolerance; 0 = any size, the default) and lies nearest to the pick location is taken, and the
 pick location is moved by how far its centre is from the taught spot, in X and Y ("Also correct across the
 tape" can be switched off). Teach once: put the pick location on the pocket as usual, camera over the pocket,
 press *Teach here*: the offset of the detected centre from the pick location is stored, so the pick spot inside
-the pocket is kept. The same limit (default 0.8 mm), failure behaviour (warn in the Orion log, pick at the taught
+the pocket is kept. Rectangles are taken from the stage named `results`, else from the last stage that returned any (rotated or plain
+rectangles, contours, circles, single or in a list), so an edited pipeline still works; when none is found the
+message says what each stage returned. The same limit (default 0.8 mm), failure behaviour (warn in the Orion log, pick at the taught
 position) and modes as the hole check apply. If nothing of the right size is seen, the message lists the
 rectangle sizes that were seen: copy them into the size fields. For paper tape, when the pocket holds a dark
 part, the detected rectangle is usually the part body (smaller than the pocket outline), set the size to that.
