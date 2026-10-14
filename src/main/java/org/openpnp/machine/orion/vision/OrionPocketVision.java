@@ -145,16 +145,20 @@ public final class OrionPocketVision {
                 Object m = r == null ? null : r.model;
                 List<double[]> here = new ArrayList<>();
                 extract(m, here);
-                if (m != null) {
+                if (m instanceof Exception) {
+                    diag.append(String.format("%s: ERROR %s  ", st.getName(), ((Exception) m).getMessage()));
+                } else if (m != null) {
                     diag.append(String.format("%s: %s (%d rect)  ", st.getName(), m.getClass().getSimpleName(),
                             here.size()));
+                } else if (!st.isEnabled()) {
+                    diag.append(String.format("%s: disabled  ", st.getName()));
                 }
                 if (px.isEmpty() && !here.isEmpty()) {
                     px = here;
                     used = st.getName();
                 }
             }
-            found.diagnostics = used == null ? "no stage returned a rectangle: " + diag : "from stage " + used;
+            found.diagnostics = used == null ? "no stage returned a rectangle. Stages: " + diag : "from stage " + used;
             Location o = VisionUtils.getPixelCenterOffsets(camera, 0, 0);
             for (double[] r : px) {
                 Location c = VisionUtils.getPixelLocation(camera, r[0], r[1]);
