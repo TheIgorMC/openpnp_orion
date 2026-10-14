@@ -226,7 +226,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
             if (feeder.getTapeTarget() == OrionFeeder.TapeTarget.Pocket) {
                 OrionUi.run("Measure pocket", () -> feeder.measurePocketShift(),
                         d -> holeResult.setText(String.format("Pocket is %+.3f / %+.3f mm (X / Y) from the pick "
-                                + "spot", d[0], d[1])));
+                                + "spot; %s", d[0], d[1], feeder.getLastPocketReport())));
             } else {
                 OrionUi.run("Measure hole", () -> feeder.measureHoleShift(),
                         d -> holeResult.setText(String.format("Tape is %+.3f mm from where it was taught", d)));

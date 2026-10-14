@@ -103,7 +103,11 @@ the pocket is kept. The same limit (default 0.8 mm), failure behaviour (warn in 
 position) and modes as the hole check apply. If nothing of the right size is seen, the message lists the
 rectangle sizes that were seen: copy them into the size fields. For paper tape, when the pocket holds a dark
 part, the detected rectangle is usually the part body (smaller than the pocket outline), set the size to that.
-The pipeline is a normal OpenPnP pipeline (Feeder identification tab > Pocket / part detection): tune the
+Check the whole chain with a known offset: after *Teach here*, *Measure now* should read about 0; add +0.30 mm
+to the feeder's pick X, Apply, *Measure now* should read about -0.30 in X (the correction back onto the
+pocket), likewise for Y. Wrong sign / swapped axes = camera orientation, wrong size = units per pixel, no change =
+the pipeline outlines something fixed. *Measure now* also shows the detected centre (machine coordinates) and
+the rectangle size. The pipeline is a normal OpenPnP pipeline (Feeder identification tab > Pocket / part detection): tune the
 threshold (invert, auto) and the contour area filter for your lighting.
 
 ## Part <-> component id on the unit

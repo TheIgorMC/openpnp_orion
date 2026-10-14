@@ -786,7 +786,18 @@ public class OrionFeeder extends ReferenceFeeder {
             throw new Exception(String.format("Feeder '%s': pocket is %.2f mm off, more than the %.2f mm limit.",
                     getName(), Math.hypot(dx, dy), maxHoleCorrectionMm));
         }
+        lastPocketReport = String.format("detected centre X=%.3f Y=%.3f, size %.2f x %.2f mm", c.center.getX(),
+                c.center.getY(), c.widthMm, c.lengthMm);
+        Logger.debug("Orion feeder {}: pocket {}; pick spot X={} Y={}; shift {} / {}", getName(), lastPocketReport,
+                base.getX() + bx, base.getY() + by, dx, dy);
         return new double[] {dx, dy};
+    }
+
+    private transient String lastPocketReport = "";
+
+    /** What the last pocket measurement saw: centre in machine coordinates and size. */
+    public String getLastPocketReport() {
+        return lastPocketReport;
     }
 
     /**
