@@ -80,6 +80,9 @@ public final class OrionPocketVision {
         return sb.length() == 0 ? "none" : sb.toString() + " mm";
     }
 
+    /** Pause between switching the camera light on and the first capture. */
+    public static volatile int LIGHT_DELAY_MS = 200;
+
     /** What a pipeline run produced: the candidates, and a note of what each stage returned (for diagnosis). */
     public static class Found {
         public final List<Candidate> candidates = new ArrayList<>();
@@ -123,6 +126,11 @@ public final class OrionPocketVision {
      */
     public static Found find(CvPipeline template, Camera camera) throws Exception {
         Found found = new Found();
+        // Light on first and give it time to settle, so the first frame is not overexposed.
+        if (camera.getLightActuator() != null && LIGHT_DELAY_MS > 0) {
+            camera.actuateLightBeforeCapture(null);
+            Thread.sleep(LIGHT_DELAY_MS);
+        }
         try (CvPipeline pipeline = template.clone()) {
             pipeline.setProperty("camera", camera);
             pipeline.process();

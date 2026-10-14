@@ -79,6 +79,14 @@ public final class OrionPipelines {
                     new org.openpnp.vision.pipeline.stages.MinAreaRectContours();
             mr.setContoursStageName("filtered");
             p.add("results", mr);
+            // Only for the pipeline editor preview: shows the rectangles (and their centres) found by "results".
+            org.openpnp.vision.pipeline.stages.DrawRotatedRects dr =
+                    new org.openpnp.vision.pipeline.stages.DrawRotatedRects();
+            dr.setRotatedRectsStageName("results");
+            dr.setThickness(2);
+            dr.setDrawRectCenter(true);
+            dr.setRectCenterRadius(6);
+            p.add("preview", dr);
             return p;
         } catch (Exception e) {
             throw new Error(e);

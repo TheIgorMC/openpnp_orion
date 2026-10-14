@@ -473,6 +473,6 @@ public class OrionFeederTest {
         assertEquals(OrionFeeder.TapeTarget.Pocket, back.getTapeTarget());
         assertEquals(0.65, back.getPocketWidthMm(), 1e-9);
         assertEquals(0.04, back.getPocketBias().getX(), 1e-9);
-        assertEquals(7, mgr.getSettings().getPocketPipeline().getStages().size());
+        assertEquals(8, mgr.getSettings().getPocketPipeline().getStages().size());
     }
 }

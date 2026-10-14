@@ -77,9 +77,9 @@ public class OrionPocketVisionTest {
     @Test
     void pocketPipelineSurvivesAnXmlRoundTrip() throws Exception {
         CvPipeline p = OrionPipelines.defaultPocketPipeline();
-        assertEquals(7, p.getStages().size());
+        assertEquals(8, p.getStages().size());
         CvPipeline back = new CvPipeline(p.toXmlString());
-        assertEquals(7, back.getStages().size());
+        assertEquals(8, back.getStages().size());
     }
 
     @Test
