@@ -430,4 +430,49 @@ public class OrionFeederTest {
         assertEquals(103.5, back.getHoleNominal().getX(), 1e-9);
         assertEquals(4, mgr.getSettings().getHolePipeline().getStages().size());
     }
+
+    @Test
+    void pocketShiftMovesThePickInBothAxesAndIsClearedForANewJob() throws Exception {
+        OrionFeeder f = bound(0);
+        org.openpnp.model.LengthUnit mm = org.openpnp.model.LengthUnit.Millimeters;
+        f.setLocation(new org.openpnp.model.Location(mm, 100, 50, -2, 0));
+        f.applyPocketShift(0.12, -0.07);
+        assertEquals(100.12, f.getPickLocation().getX(), 1e-9);
+        assertEquals(49.93, f.getPickLocation().getY(), 1e-9);
+        f.applyHoleShift(0.1);
+        assertEquals(50.03, f.getPickLocation().getY(), 1e-9, "both checks add up (only one is used at a time)");
+        f.prepareForJob(false);
+        assertEquals(100.0, f.getPickLocation().getX(), 1e-9);
+        assertEquals(50.0, f.getPickLocation().getY(), 1e-9);
+    }
+
+    @Test
+    void pocketSettingsAndPipelineSurviveSaveAndReload() throws Exception {
+        OrionFeeder f = bound(0);
+        org.openpnp.model.Package pkg = new org.openpnp.model.Package("pk");
+        Configuration.get().addPackage(pkg);
+        org.openpnp.model.Part part = new org.openpnp.model.Part("pt");
+        part.setPackage(pkg);
+        Configuration.get().addPart(part);
+        f.setPart(part);
+        f.setTapeTarget(OrionFeeder.TapeTarget.Pocket);
+        f.setHoleMode(OrionFeeder.HoleMode.EveryFeed);
+        f.setPocketWidthMm(0.65);
+        f.setPocketLengthMm(1.15);
+        f.setPocketBias(new org.openpnp.model.Location(org.openpnp.model.LengthUnit.Millimeters, 0.04, -0.02, 0, 0));
+        mgr.getSettings().getPocketPipeline();
+        Configuration.get().save();
+        Configuration.initialize(dir);
+        Configuration.get().load();
+        OrionFeeder back = null;
+        for (org.openpnp.spi.Feeder x : Configuration.get().getMachine().getFeeders()) {
+            if (x instanceof OrionFeeder) {
+                back = (OrionFeeder) x;
+            }
+        }
+        assertEquals(OrionFeeder.TapeTarget.Pocket, back.getTapeTarget());
+        assertEquals(0.65, back.getPocketWidthMm(), 1e-9);
+        assertEquals(0.04, back.getPocketBias().getX(), 1e-9);
+        assertEquals(7, mgr.getSettings().getPocketPipeline().getStages().size());
+    }
 }

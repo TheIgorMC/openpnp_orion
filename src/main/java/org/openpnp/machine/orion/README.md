@@ -90,6 +90,22 @@ press *Teach hole here*. *Measure now* shows the current shift. Modes: off, afte
 feed of each job. Tune the pipeline and hole diameter / search radius in the Feeder identification tab. It
 costs one camera move and capture per pick, so use it where the tolerance matters (small parts).
 
+### Pocket / part centring (small parts)
+
+*Look at: Pocket / part* centres the pick on what the camera sees instead of trusting the tape position. After
+each feed the camera goes to the pick location, the **pocket pipeline** (capture, blur, gray, Otsu threshold with
+dark objects white, contours, size-filtered, minimum-area rectangles as the `results` stage) finds rectangles, the
+one that matches the **pocket size W x L** (+- tolerance) and lies nearest to the pick location is taken, and the
+pick location is moved by how far its centre is from the taught spot, in X and Y ("Also correct across the
+tape" can be switched off). Teach once: put the pick location on the pocket as usual, camera over the pocket,
+press *Teach here*: the offset of the detected centre from the pick location is stored, so the pick spot inside
+the pocket is kept. The same limit (default 0.8 mm), failure behaviour (warn in the Orion log, pick at the taught
+position) and modes as the hole check apply. If nothing of the right size is seen, the message lists the
+rectangle sizes that were seen: copy them into the size fields. For paper tape, when the pocket holds a dark
+part, the detected rectangle is usually the part body (smaller than the pocket outline), set the size to that.
+The pipeline is a normal OpenPnP pipeline (Feeder identification tab > Pocket / part detection): tune the
+threshold (invert, auto) and the contour area filter for your lighting.
+
 ## Part <-> component id on the unit
 
 If your OpenPnP part ids are plain numbers (e.g. `1234`, also zero padded like `0042`) the unit's

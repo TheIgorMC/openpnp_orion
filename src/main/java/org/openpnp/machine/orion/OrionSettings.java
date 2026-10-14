@@ -222,6 +222,21 @@ public class OrionSettings {
     @Attribute(required = false)
     private double holeLateralTolMm = 1.0;
 
+    /** Pocket / part detection for centring the pick on the pocket each time. */
+    @Element(required = false)
+    private CvPipeline pocketPipeline;
+
+    public synchronized CvPipeline getPocketPipeline() {
+        if (pocketPipeline == null) {
+            pocketPipeline = OrionPipelines.defaultPocketPipeline();
+        }
+        return pocketPipeline;
+    }
+
+    public synchronized void resetPocketPipeline() {
+        pocketPipeline = OrionPipelines.defaultPocketPipeline();
+    }
+
     public synchronized CvPipeline getHolePipeline() {
         if (holePipeline == null) {
             holePipeline = OrionPipelines.defaultHolePipeline();

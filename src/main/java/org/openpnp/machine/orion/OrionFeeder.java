@@ -146,6 +146,51 @@ public class OrionFeeder extends ReferenceFeeder {
     @Attribute(required = false)
     protected double maxHoleCorrectionMm = 0.8;
 
+    public enum TapeTarget {
+        SprocketHole("Sprocket hole (tape position only)"),
+        Pocket("Pocket / part (centres the pick)");
+
+        private final String label;
+
+        TapeTarget(String label) {
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    /** What the per-pick check looks at. */
+    @Attribute(required = false)
+    protected TapeTarget tapeTarget = TapeTarget.SprocketHole;
+
+    /** Expected pocket outline (mm) used to pick the right rectangle in the image. */
+    @Attribute(required = false)
+    protected double pocketWidthMm = 0.7;
+
+    @Attribute(required = false)
+    protected double pocketLengthMm = 1.3;
+
+    @Attribute(required = false)
+    protected double pocketSizeTolPct = 35;
+
+    /** Detected pocket centre minus the taught pick location, when taught: the pick spot inside the pocket. */
+    @Element(required = false)
+    protected Location pocketBias;
+
+    /** Also correct across the tape (X when the tape runs along Y), not only along it. */
+    @Attribute(required = false)
+    protected boolean pocketCorrectAcross = true;
+
+    /** Camera height the pocket was taught at; NaN = the camera's default Z. */
+    @Attribute(required = false)
+    protected double pocketCameraZ = Double.NaN;
+
+    private transient double pocketShiftX;
+    private transient double pocketShiftY;
+
     /** Tape shift measured at the last pick, along the tape axis, mm. Not persisted. */
     private transient double holeShiftMm;
     private transient boolean holeDoneThisJob;
@@ -513,6 +558,20 @@ public class OrionFeeder extends ReferenceFeeder {
 
     @Override
     public Location getPickLocation() throws Exception {
+        Location l = basePickLocation();
+        if (holeShiftMm != 0) {
+            l = l.add(tapeAxis == org.openpnp.machine.orion.vision.OrionHoleVision.Axis.Y
+                    ? new Location(LengthUnit.Millimeters, 0, holeShiftMm, 0, 0)
+                    : new Location(LengthUnit.Millimeters, holeShiftMm, 0, 0, 0));
+        }
+        if (pocketShiftX != 0 || pocketShiftY != 0) {
+            l = l.add(new Location(LengthUnit.Millimeters, pocketShiftX, pocketShiftY, 0, 0));
+        }
+        return l;
+    }
+
+    /** Taught pick location plus slot follow and fiducial correction, before any per-pick tape check. */
+    private Location basePickLocation() throws Exception {
         Location l = location;
         if (followSlotPosition && !Double.isNaN(taughtSlotXMm)) {
             if (Double.isNaN(currentSlotXMm)) {
@@ -524,11 +583,6 @@ public class OrionFeeder extends ReferenceFeeder {
         }
         if (visionDelta != null) {
             l = l.add(visionDelta);
-        }
-        if (holeShiftMm != 0) {
-            l = l.add(tapeAxis == org.openpnp.machine.orion.vision.OrionHoleVision.Axis.Y
-                    ? new Location(LengthUnit.Millimeters, 0, holeShiftMm, 0, 0)
-                    : new Location(LengthUnit.Millimeters, holeShiftMm, 0, 0, 0));
         }
         return l;
     }
@@ -630,9 +684,144 @@ public class OrionFeeder extends ReferenceFeeder {
         return holeNominal;
     }
 
+    public TapeTarget getTapeTarget() {
+        return tapeTarget;
+    }
+
+    public void setTapeTarget(TapeTarget t) {
+        tapeTarget = t;
+    }
+
+    public double getPocketWidthMm() {
+        return pocketWidthMm;
+    }
+
+    public void setPocketWidthMm(double v) {
+        pocketWidthMm = v;
+    }
+
+    public double getPocketLengthMm() {
+        return pocketLengthMm;
+    }
+
+    public void setPocketLengthMm(double v) {
+        pocketLengthMm = v;
+    }
+
+    public double getPocketSizeTolPct() {
+        return pocketSizeTolPct;
+    }
+
+    public void setPocketSizeTolPct(double v) {
+        pocketSizeTolPct = v;
+    }
+
+    public boolean isPocketCorrectAcross() {
+        return pocketCorrectAcross;
+    }
+
+    public void setPocketCorrectAcross(boolean v) {
+        pocketCorrectAcross = v;
+    }
+
+    public Location getPocketBias() {
+        return pocketBias;
+    }
+
+    public void setPocketBias(Location l) {
+        pocketBias = l;
+    }
+
+    public double getPocketShiftX() {
+        return pocketShiftX;
+    }
+
+    public double getPocketShiftY() {
+        return pocketShiftY;
+    }
+
+    public void applyPocketShift(double dx, double dy) {
+        pocketShiftX = dx;
+        pocketShiftY = dy;
+    }
+
+    private double pocketCamZ(org.openpnp.spi.Camera cam) throws Exception {
+        return Double.isNaN(pocketCameraZ) ? cam.getDefaultZ().convertToUnits(LengthUnit.Millimeters).getValue()
+                : pocketCameraZ;
+    }
+
+    /**
+     * Look at the pocket (or the part in it) and return how far its centre is from where the pick spot is
+     * supposed to be, {dx, dy} in mm. Throws if no pocket of the expected size is found.
+     */
+    public synchronized double[] measurePocketShift() throws Exception {
+        OrionSettings st = OrionManager.get().getSettings();
+        org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
+        Location base = basePickLocation().convertToUnits(LengthUnit.Millimeters);
+        org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, new Location(LengthUnit.Millimeters,
+                base.getX(), base.getY(), pocketCamZ(cam), base.getRotation()));
+        java.util.List<org.openpnp.machine.orion.vision.OrionPocketVision.Candidate> found =
+                org.openpnp.machine.orion.vision.OrionPocketVision.findPockets(st.getPocketPipeline(), cam);
+        org.openpnp.machine.orion.vision.OrionPocketVision.Candidate c =
+                org.openpnp.machine.orion.vision.OrionPocketVision.select(found, pocketWidthMm, pocketLengthMm,
+                        pocketSizeTolPct / 100.0, base);
+        if (c == null) {
+            throw new Exception(String.format("Feeder '%s': no pocket of about %.2f x %.2f mm found. "
+                    + "Rectangles seen: %s. Set the size to what the pipeline sees, or tune the pipeline.",
+                    getName(), pocketWidthMm, pocketLengthMm,
+                    org.openpnp.machine.orion.vision.OrionPocketVision.describe(found)));
+        }
+        double bx = pocketBias == null ? 0 : pocketBias.convertToUnits(LengthUnit.Millimeters).getX();
+        double by = pocketBias == null ? 0 : pocketBias.convertToUnits(LengthUnit.Millimeters).getY();
+        double dx = c.center.getX() - (base.getX() + bx);
+        double dy = c.center.getY() - (base.getY() + by);
+        if (!pocketCorrectAcross) {
+            if (tapeAxis == org.openpnp.machine.orion.vision.OrionHoleVision.Axis.Y) {
+                dx = 0;
+            } else {
+                dy = 0;
+            }
+        }
+        if (Math.hypot(dx, dy) > maxHoleCorrectionMm) {
+            throw new Exception(String.format("Feeder '%s': pocket is %.2f mm off, more than the %.2f mm limit.",
+                    getName(), Math.hypot(dx, dy), maxHoleCorrectionMm));
+        }
+        return new double[] {dx, dy};
+    }
+
+    /**
+     * The camera is over the pocket and the pick location is where the nozzle should pick: remember where
+     * the detected pocket centre lies relative to the pick location, so later checks keep that spot.
+     */
+    public synchronized Location teachPocketHere() throws Exception {
+        OrionSettings st = OrionManager.get().getSettings();
+        org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
+        java.util.List<org.openpnp.machine.orion.vision.OrionPocketVision.Candidate> found =
+                org.openpnp.machine.orion.vision.OrionPocketVision.findPockets(st.getPocketPipeline(), cam);
+        org.openpnp.machine.orion.vision.OrionPocketVision.Candidate c =
+                org.openpnp.machine.orion.vision.OrionPocketVision.select(found, pocketWidthMm, pocketLengthMm,
+                        pocketSizeTolPct / 100.0, cam.getLocation());
+        if (c == null) {
+            throw new Exception(String.format("No pocket of about %.2f x %.2f mm found under the camera. "
+                    + "Rectangles seen: %s. Set the size to what the pipeline sees, or tune the pipeline.",
+                    pocketWidthMm, pocketLengthMm,
+                    org.openpnp.machine.orion.vision.OrionPocketVision.describe(found)));
+        }
+        Location base = basePickLocation().convertToUnits(LengthUnit.Millimeters);
+        pocketBias = new Location(LengthUnit.Millimeters, c.center.getX() - base.getX(),
+                c.center.getY() - base.getY(), 0, 0);
+        pocketCameraZ = cam.getLocation().convertToUnits(LengthUnit.Millimeters).getZ();
+        pocketShiftX = 0;
+        pocketShiftY = 0;
+        return pocketBias;
+    }
+
     private void checkTapeByHolesIfNeeded() throws Exception {
         holeShiftMm = 0; // the tape just moved, an older measurement does not apply
-        if (holeMode == HoleMode.Off || holeNominal == null) {
+        pocketShiftX = 0;
+        pocketShiftY = 0;
+        boolean pocket = tapeTarget == TapeTarget.Pocket;
+        if (holeMode == HoleMode.Off || (!pocket && holeNominal == null)) {
             return;
         }
         if (holeMode == HoleMode.FirstFeedOfJob && holeDoneThisJob) {
@@ -642,12 +831,19 @@ public class OrionFeeder extends ReferenceFeeder {
             return;
         }
         try {
-            holeShiftMm = measureHoleShift();
+            if (pocket) {
+                double[] d = measurePocketShift();
+                pocketShiftX = d[0];
+                pocketShiftY = d[1];
+                Logger.debug("Orion feeder {}: pocket shift {} / {} mm", getName(), d[0], d[1]);
+            } else {
+                holeShiftMm = measureHoleShift();
+                Logger.debug("Orion feeder {}: tape shift {} mm", getName(), holeShiftMm);
+            }
             holeDoneThisJob = true;
-            Logger.debug("Orion feeder {}: tape shift {} mm", getName(), holeShiftMm);
         } catch (Exception e) {
             // Never stop a job for this: pick at the taught position and say so.
-            Logger.warn("Orion feeder {}: tape check by sprocket hole failed: {}", getName(), e.getMessage());
+            Logger.warn("Orion feeder {}: tape check failed: {}", getName(), e.getMessage());
             OrionManager.get().addLog(rail,
                     org.openpnp.machine.orion.protocol.OrionBusListener.Direction.ERROR,
                     "tape check failed: " + e.getMessage());
@@ -706,6 +902,8 @@ public class OrionFeeder extends ReferenceFeeder {
         visionDelta = null;
         visionDoneThisJob = false;
         holeShiftMm = 0;
+        pocketShiftX = 0;
+        pocketShiftY = 0;
         holeDoneThisJob = false;
         checkRailVerified();
         super.prepareForJob(visit);

@@ -46,6 +46,45 @@ public final class OrionPipelines {
         }
     }
 
+    /**
+     * Pocket / part detection for the per-pick centring: capture, blur, gray, threshold (Otsu, dark things
+     * become white), contours, size-filtered contours, their minimum-area rectangles as the "results" stage.
+     * Java then keeps the rectangle that matches the pocket size and sits nearest to the pick location.
+     */
+    public static CvPipeline defaultPocketPipeline() {
+        return pocketPipeline("<cv-stage class=\"org.openpnp.vision.pipeline.stages.ImageCapture\" name=\"capture\" "
+                + "enabled=\"true\" default-light=\"true\" settle-first=\"true\" count=\"1\"/>");
+    }
+
+    /** Same pipeline with a custom first stage (tests feed it an image file instead of the camera). */
+    static CvPipeline pocketPipeline(String firstStageXml) {
+        try {
+            CvPipeline p = new CvPipeline("<cv-pipeline><stages>" + firstStageXml
+                    + "<cv-stage class=\"org.openpnp.vision.pipeline.stages.BlurGaussian\" name=\"blur\" enabled=\"true\" kernel-size=\"5\"/>"
+                    + "<cv-stage class=\"org.openpnp.vision.pipeline.stages.ConvertColor\" name=\"gray\" enabled=\"true\" conversion=\"Bgr2Gray\"/>"
+                    + "</stages></cv-pipeline>");
+            org.openpnp.vision.pipeline.stages.Threshold th = new org.openpnp.vision.pipeline.stages.Threshold();
+            th.setAuto(true);
+            th.setInvert(true);
+            p.add("threshold", th);
+            org.openpnp.vision.pipeline.stages.FindContours fc = new org.openpnp.vision.pipeline.stages.FindContours();
+            fc.setRetrievalMode(org.openpnp.vision.pipeline.stages.FindContours.RetrievalMode.External);
+            p.add("contours", fc);
+            org.openpnp.vision.pipeline.stages.FilterContours flt = new org.openpnp.vision.pipeline.stages.FilterContours();
+            flt.setContoursStageName("contours");
+            flt.setMinArea(150);
+            flt.setMaxArea(200000);
+            p.add("filtered", flt);
+            org.openpnp.vision.pipeline.stages.MinAreaRectContours mr =
+                    new org.openpnp.vision.pipeline.stages.MinAreaRectContours();
+            mr.setContoursStageName("filtered");
+            p.add("results", mr);
+            return p;
+        } catch (Exception e) {
+            throw new Error(e);
+        }
+    }
+
     public static CvPipeline defaultMovementPipeline() {
         try {
             return new CvPipeline(
