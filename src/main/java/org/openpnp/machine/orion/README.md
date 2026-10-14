@@ -103,6 +103,11 @@ the pocket is kept. The same limit (default 0.8 mm), failure behaviour (warn in 
 position) and modes as the hole check apply. If nothing of the right size is seen, the message lists the
 rectangle sizes that were seen: copy them into the size fields. For paper tape, when the pocket holds a dark
 part, the detected rectangle is usually the part body (smaller than the pocket outline), set the size to that.
+*Teach here* is required: the detected centre is in camera terms, the pick location is where the nozzle goes, and any
+error in the camera-to-nozzle offset would otherwise be applied to every pick (the check refuses to run
+untaught and tells you so). Teach after the pick location is final; re-teach if you move the pick location.
+*Measure now* (and the error message) lists the pick location, the camera position, and the centre and size of
+each rectangle seen.
 Check the whole chain with a known offset: after *Teach here*, *Measure now* should read about 0; add +0.30 mm
 to the feeder's pick X, Apply, *Measure now* should read about -0.30 in X (the correction back onto the
 pocket), likewise for Y. Wrong sign / swapped axes = camera orientation, wrong size = units per pixel, no change =

@@ -54,6 +54,20 @@ public final class OrionPocketVision {
         return best;
     }
 
+    /** One line per rectangle: centre in machine coordinates and size, for the "what did it see" report. */
+    public static String describeWithCentres(List<Candidate> candidates) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < candidates.size() && i < 6; i++) {
+            Candidate c = candidates.get(i);
+            if (i > 0) {
+                sb.append("; ");
+            }
+            sb.append(String.format("centre X=%.3f Y=%.3f size %.2fx%.2f", c.center.getX(), c.center.getY(),
+                    c.widthMm, c.lengthMm));
+        }
+        return sb.length() == 0 ? "none" : sb.toString();
+    }
+
     /** "0.52x1.01, 0.30x0.30" for messages: what the pipeline actually saw (at most six). */
     public static String describe(List<Candidate> candidates) {
         StringBuilder sb = new StringBuilder();
@@ -83,7 +97,16 @@ public final class OrionPocketVision {
             if (model instanceof List) {
                 Location o = VisionUtils.getPixelCenterOffsets(camera, 0, 0);
                 for (Object r : (List<?>) model) {
-                    if (r instanceof RotatedRect) {
+                    if (r instanceof org.opencv.core.Rect) { // axis-aligned rectangles: centre, not the top-left corner
+                        org.opencv.core.Rect rc = (org.opencv.core.Rect) r;
+                        Location c = VisionUtils.getPixelLocation(camera, rc.x + rc.width / 2.0,
+                                rc.y + rc.height / 2.0);
+                        double w = VisionUtils.getPixelCenterOffsets(camera, rc.width, 0)
+                                .getLinearLengthTo(o).convertToUnits(LengthUnit.Millimeters).getValue();
+                        double h = VisionUtils.getPixelCenterOffsets(camera, 0, rc.height)
+                                .getLinearLengthTo(o).convertToUnits(LengthUnit.Millimeters).getValue();
+                        out.add(new Candidate(c, w, h));
+                    } else if (r instanceof RotatedRect) {
                         RotatedRect rr = (RotatedRect) r;
                         Location c = VisionUtils.getPixelLocation(camera, rr.center.x, rr.center.y);
                         double w = VisionUtils.getPixelCenterOffsets(camera, rr.size.width, 0)

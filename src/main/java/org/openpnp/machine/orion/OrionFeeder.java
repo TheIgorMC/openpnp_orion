@@ -771,8 +771,18 @@ public class OrionFeeder extends ReferenceFeeder {
                     getName(), pocketWidthMm, pocketLengthMm,
                     org.openpnp.machine.orion.vision.OrionPocketVision.describe(found)));
         }
-        double bx = pocketBias == null ? 0 : pocketBias.convertToUnits(LengthUnit.Millimeters).getX();
-        double by = pocketBias == null ? 0 : pocketBias.convertToUnits(LengthUnit.Millimeters).getY();
+        lastPocketReport = String.format("pick location X=%.3f Y=%.3f; camera at X=%.3f Y=%.3f; saw %s",
+                base.getX(), base.getY(), cam.getLocation().convertToUnits(LengthUnit.Millimeters).getX(),
+                cam.getLocation().convertToUnits(LengthUnit.Millimeters).getY(),
+                org.openpnp.machine.orion.vision.OrionPocketVision.describeWithCentres(found))
+                + String.format(" -> using centre X=%.3f Y=%.3f", c.center.getX(), c.center.getY());
+        if (pocketBias == null) {
+            // Without the taught offset the camera/nozzle offset error would be applied to every pick.
+            throw new Exception(String.format("Feeder '%s': teach the pocket first (Teach here), the offset between "
+                    + "the camera's view and the nozzle is not known yet. %s", getName(), lastPocketReport));
+        }
+        double bx = pocketBias.convertToUnits(LengthUnit.Millimeters).getX();
+        double by = pocketBias.convertToUnits(LengthUnit.Millimeters).getY();
         double dx = c.center.getX() - (base.getX() + bx);
         double dy = c.center.getY() - (base.getY() + by);
         if (!pocketCorrectAcross) {
@@ -786,8 +796,6 @@ public class OrionFeeder extends ReferenceFeeder {
             throw new Exception(String.format("Feeder '%s': pocket is %.2f mm off, more than the %.2f mm limit.",
                     getName(), Math.hypot(dx, dy), maxHoleCorrectionMm));
         }
-        lastPocketReport = String.format("detected centre X=%.3f Y=%.3f, size %.2f x %.2f mm", c.center.getX(),
-                c.center.getY(), c.widthMm, c.lengthMm);
         Logger.debug("Orion feeder {}: pocket {}; pick spot X={} Y={}; shift {} / {}", getName(), lastPocketReport,
                 base.getX() + bx, base.getY() + by, dx, dy);
         return new double[] {dx, dy};
