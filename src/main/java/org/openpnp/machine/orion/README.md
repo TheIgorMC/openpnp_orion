@@ -279,3 +279,10 @@ Feeder tab, "Vision: tape / pocket check" panel: **Move the nozzle above the pic
 (off by default). If the tape/pocket check is due after the feed, the *camera* travels to its look position during the feed instead of the nozzle. Otherwise the feed runs on its own thread while the nozzle goes to safe Z, over the pick location, and down
 to 1 mm above it (`approachHeightMm`). The tape check (if enabled) still waits for the feed to finish, and the job's
 own pick move continues from there. Check the clearance above the tape before enabling it.
+
+## Bottom vision lost the part
+
+Feeder tab checkbox "If bottom vision loses the part: check the pocket and pick again (2x) instead of stopping" (on by
+default, Orion feeders only). When alignment fails after all vision retries, the job discards what is on the nozzle,
+forces the camera tape/pocket check on the next feed, feeds and picks again, and re-aligns. After two such repicks for
+the same placement the normal error stops the job. Vacuum-lost errors are not affected.

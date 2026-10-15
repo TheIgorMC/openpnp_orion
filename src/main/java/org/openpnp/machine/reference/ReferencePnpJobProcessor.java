@@ -1624,11 +1624,53 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                 return this;
             }
 
-            align(plannedPlacement, partAlignment);
+            try {
+                align(plannedPlacement, partAlignment);
+            }
+            catch (JobProcessorException e) {
+                if (!repickAfterVisionFailure(plannedPlacement, e)) {
+                    throw e;
+                }
+                return stepImpl(plannedPlacement); // align the new part
+            }
             
             checkPartOn(nozzle);
 
             return this;
+        }
+
+        private final HashMap<PlannedPlacement, Integer> orionRepicks = new HashMap<>();
+
+        /**
+         * Orion feeders: when bottom vision cannot find the part, discard what is on the nozzle and feed and
+         * pick again (the feed re-checks the pocket with the camera) instead of stopping the job. At most
+         * twice per placement; after that the normal error is raised.
+         */
+        private boolean repickAfterVisionFailure(PlannedPlacement pp, JobProcessorException cause)
+                throws JobProcessorException {
+            final Part part = pp.jobPlacement.getPlacement().getPart();
+            Feeder feeder;
+            try {
+                feeder = findFeeder(machine, part, pp.jobPlacement.getPlannedFeeder(), null);
+            }
+            catch (JobProcessorException e) {
+                return false;
+            }
+            if (!(feeder instanceof org.openpnp.machine.orion.OrionFeeder)
+                    || !((org.openpnp.machine.orion.OrionFeeder) feeder).isRepickOnVisionFail()) {
+                return false;
+            }
+            int n = orionRepicks.merge(pp, 1, Integer::sum);
+            if (n > 2) {
+                return false;
+            }
+            Logger.warn("Bottom vision failed for {} from {} ({}); checking the pocket and picking again ({}/2)",
+                    part.getId(), feeder.getName(), cause.getMessage(), n);
+            fireTextStatus("Bottom vision failed for %s, discarding and picking again (%d/2).", part.getId(), n);
+            ((org.openpnp.machine.orion.OrionFeeder) feeder).forceTapeCheckNextFeed();
+            discard(pp.nozzle);
+            new Pick(plannedPlacements).stepImpl(pp);
+            return true;
         }
         
         private void align(PlannedPlacement plannedPlacement, PartAlignment partAlignment) throws JobProcessorException {

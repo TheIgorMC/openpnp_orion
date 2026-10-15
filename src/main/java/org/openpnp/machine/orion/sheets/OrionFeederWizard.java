@@ -71,6 +71,8 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
     private final JTextField pocketTolTf = new JTextField(6);
     private final javax.swing.JCheckBox acrossCb = new javax.swing.JCheckBox("Also correct across the tape");
     private final JLabel holeResult = new JLabel(" ");
+    private final javax.swing.JCheckBox repickCb = new javax.swing.JCheckBox(
+            "If bottom vision loses the part: check the pocket and pick again (2x) instead of stopping");
     private final javax.swing.JCheckBox movingCb = new javax.swing.JCheckBox("Move the nozzle above the pick spot while the feeder feeds");
 
     /** The result text can be long: wrap it on its own line instead of widening the tab. */
@@ -242,6 +244,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         OrionUi.row(hole, 6, "", OrionUi.line(teachHole, measureHole));
         OrionUi.row(hole, 7, "", holeResult);
         OrionUi.row(hole, 8, "", movingCb);
+        OrionUi.row(hole, 9, "", repickCb);
         contentPanel.add(hole);
 
         // ---- live controls
@@ -448,6 +451,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         addWrappedBinding(feeder, "pocketSizeTolPct", pocketTolTf, "text", new DoubleConverter("%.0f"));
         addWrappedBinding(feeder, "pocketCorrectAcross", acrossCb, "selected");
         addWrappedBinding(feeder, "moveWhileFeeding", movingCb, "selected");
+        addWrappedBinding(feeder, "repickOnVisionFail", repickCb, "selected");
         addWrappedBinding(feeder, "visionMode", visionModeCb, "selectedItem");
         addWrappedBinding(feeder, "fiducialPart", fiducialPartCb, "selectedItem");
         addWrappedBinding(feeder, "visionXOnly", xOnlyCb, "selected");

@@ -191,6 +191,10 @@ public class OrionFeeder extends ReferenceFeeder {
     @Attribute(required = false)
     protected double approachHeightMm = 1.0;
 
+    /** Bottom vision lost the part: discard, re-check the pocket, feed and pick again (twice at most). */
+    @Attribute(required = false)
+    protected boolean repickOnVisionFail = true;
+
     /** Camera height the pocket was taught at; NaN = the camera's default Z. */
     @Attribute(required = false)
     protected double pocketCameraZ = Double.NaN;
@@ -633,6 +637,19 @@ public class OrionFeeder extends ReferenceFeeder {
         } else if (feedError[0] != null) {
             throw new Exception(feedError[0]);
         }
+    }
+
+    public boolean isRepickOnVisionFail() {
+        return repickOnVisionFail;
+    }
+
+    public void setRepickOnVisionFail(boolean v) {
+        repickOnVisionFail = v;
+    }
+
+    /** Make the next feed run the tape / pocket check even in "first feed of job" mode. */
+    public void forceTapeCheckNextFeed() {
+        holeDoneThisJob = false;
     }
 
     public boolean isMoveWhileFeeding() {
