@@ -188,9 +188,6 @@ public class OrionFeeder extends ReferenceFeeder {
     @Attribute(required = false)
     protected boolean moveWhileFeeding = false;
 
-    @Attribute(required = false)
-    protected double approachHeightMm = 1.0;
-
     /** Bottom vision lost the part: discard, re-check the pocket, feed and pick again (twice at most). */
     @Attribute(required = false)
     protected boolean repickOnVisionFail = true;
@@ -572,9 +569,9 @@ public class OrionFeeder extends ReferenceFeeder {
     }
 
     /**
-     * Feed on a helper thread (the feeder is on its own bus) while the nozzle already travels to a spot
-     * {@link #approachHeightMm} above the pick location. A tape check afterwards, or the job's own pick move,
-     * continues from there. Returns when both are done.
+     * Feed on a helper thread (the feeder is on its own bus) while the nozzle already travels in XY over the
+     * pick location, Z unchanged. A tape check afterwards, or the job's own pick move, continues from there.
+     * Returns when both are done.
      */
     private void feedWhileMoving(Nozzle nozzle) throws Exception {
         if (tapeCheckWillRun()) {
@@ -582,9 +579,8 @@ public class OrionFeeder extends ReferenceFeeder {
             feedWhileMovingCamera();
             return;
         }
-        Location above = basePickLocation().add(new Location(LengthUnit.Millimeters, 0, 0, approachHeightMm, 0));
-        Location overXY = new Location(above.getUnits(), above.getX(), above.getY(), Double.NaN, Double.NaN);
-        Location target = new Location(above.getUnits(), above.getX(), above.getY(), above.getZ(), Double.NaN);
+        Location base = basePickLocation();
+        Location overXY = new Location(base.getUnits(), base.getX(), base.getY(), Double.NaN, Double.NaN);
         final Throwable[] feedError = new Throwable[1];
         Thread feeding = new Thread(() -> {
             try {
@@ -595,9 +591,7 @@ public class OrionFeeder extends ReferenceFeeder {
         }, "orion-feed-" + getName());
         feeding.start();
         try {
-            nozzle.moveToSafeZ();
-            nozzle.moveTo(overXY);
-            nozzle.moveTo(target);
+            nozzle.moveTo(overXY); // XY only, Z stays where it is
         } finally {
             feeding.join();
         }
@@ -658,14 +652,6 @@ public class OrionFeeder extends ReferenceFeeder {
 
     public void setMoveWhileFeeding(boolean v) {
         moveWhileFeeding = v;
-    }
-
-    public double getApproachHeightMm() {
-        return approachHeightMm;
-    }
-
-    public void setApproachHeightMm(double v) {
-        approachHeightMm = v;
     }
 
     @Override

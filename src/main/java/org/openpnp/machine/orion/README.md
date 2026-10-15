@@ -276,9 +276,7 @@ Unpeel buttons (manual loading) use the unit's own peel time when it has one, ot
 ## Move while feeding
 
 Feeder tab, "Vision: tape / pocket check" panel: **Move the nozzle above the pick spot while the feeder feeds**
-(off by default). If the tape/pocket check is due after the feed, the *camera* travels to its look position during the feed instead of the nozzle. Otherwise the feed runs on its own thread while the nozzle goes to safe Z, over the pick location, and down
-to 1 mm above it (`approachHeightMm`). The tape check (if enabled) still waits for the feed to finish, and the job's
-own pick move continues from there. Check the clearance above the tape before enabling it.
+(off by default). If the tape/pocket check is due after the feed, the *camera* travels to its look position during the feed instead of the nozzle. Otherwise the feed runs on its own thread while the nozzle moves in XY over the pick location (Z is not changed). The tape check (if enabled) still waits for the feed to finish, and the job's own pick move continues from there. Check the clearance above the tape before enabling it.
 
 ## Bottom vision lost the part
 
