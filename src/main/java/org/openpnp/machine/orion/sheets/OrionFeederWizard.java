@@ -71,6 +71,13 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
     private final JTextField pocketTolTf = new JTextField(6);
     private final javax.swing.JCheckBox acrossCb = new javax.swing.JCheckBox("Also correct across the tape");
     private final JLabel holeResult = new JLabel(" ");
+    private final javax.swing.JCheckBox movingCb = new javax.swing.JCheckBox("Move the nozzle above the pick spot while the feeder feeds");
+
+    /** The result text can be long: wrap it on its own line instead of widening the tab. */
+    private void setHoleResult(String text) {
+        String esc = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        holeResult.setText("<html><body style='width:430px'>" + esc + "</body></html>");
+    }
     private final JTextField slotTf = new JTextField(7);
     private final javax.swing.JCheckBox followCb = new javax.swing.JCheckBox(
             "Shift pick X when the unit's slot X changes");
@@ -213,11 +220,11 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         teachHole.addActionListener(e -> {
             if (feeder.getTapeTarget() == OrionFeeder.TapeTarget.Pocket) {
                 OrionUi.run("Teach pocket", () -> feeder.teachPocketHere(),
-                        l -> holeResult.setText(String.format("Pocket centre is %+.3f / %+.3f mm from the pick "
+                        l -> setHoleResult(String.format("Pocket centre is %+.3f / %+.3f mm from the pick "
                                 + "location (taught)", l.getX(), l.getY())));
             } else {
                 OrionUi.run("Teach hole", () -> feeder.teachHoleHere(),
-                        l -> holeResult.setText(String.format("Reference hole at X=%.3f Y=%.3f", l.getX(),
+                        l -> setHoleResult(String.format("Reference hole at X=%.3f Y=%.3f", l.getX(),
                                 l.getY())));
             }
         });
@@ -225,14 +232,16 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         measureHole.addActionListener(e -> {
             if (feeder.getTapeTarget() == OrionFeeder.TapeTarget.Pocket) {
                 OrionUi.run("Measure pocket", () -> feeder.measurePocketShift(),
-                        d -> holeResult.setText(String.format("Pocket is %+.3f / %+.3f mm (X / Y) from the pick "
+                        d -> setHoleResult(String.format("Pocket is %+.3f / %+.3f mm (X / Y) from the pick "
                                 + "spot; %s", d[0], d[1], feeder.getLastPocketReport())));
             } else {
                 OrionUi.run("Measure hole", () -> feeder.measureHoleShift(),
-                        d -> holeResult.setText(String.format("Tape is %+.3f mm from where it was taught", d)));
+                        d -> setHoleResult(String.format("Tape is %+.3f mm from where it was taught", d)));
             }
         });
-        OrionUi.row(hole, 6, "", OrionUi.line(teachHole, measureHole, holeResult));
+        OrionUi.row(hole, 6, "", OrionUi.line(teachHole, measureHole));
+        OrionUi.row(hole, 7, "", holeResult);
+        OrionUi.row(hole, 8, "", movingCb);
         contentPanel.add(hole);
 
         // ---- live controls
@@ -438,6 +447,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         addWrappedBinding(feeder, "pocketLengthMm", pocketLTf, "text", new DoubleConverter("%.2f"));
         addWrappedBinding(feeder, "pocketSizeTolPct", pocketTolTf, "text", new DoubleConverter("%.0f"));
         addWrappedBinding(feeder, "pocketCorrectAcross", acrossCb, "selected");
+        addWrappedBinding(feeder, "moveWhileFeeding", movingCb, "selected");
         addWrappedBinding(feeder, "visionMode", visionModeCb, "selectedItem");
         addWrappedBinding(feeder, "fiducialPart", fiducialPartCb, "selectedItem");
         addWrappedBinding(feeder, "visionXOnly", xOnlyCb, "selected");

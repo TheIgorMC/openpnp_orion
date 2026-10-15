@@ -57,6 +57,8 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         south.add(statusLabel, BorderLayout.CENTER);
         progress.setStringPainted(true);
         progress.setVisible(false);
+        progress.setPreferredSize(new java.awt.Dimension(2 * progress.getPreferredSize().width,
+                progress.getPreferredSize().height));
         south.add(progress, BorderLayout.EAST);
         add(south, BorderLayout.SOUTH);
         mgr.addListener(this);

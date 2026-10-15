@@ -184,6 +184,13 @@ public class OrionFeeder extends ReferenceFeeder {
     @Attribute(required = false)
     protected boolean pocketCorrectAcross = true;
 
+    /** Travel to just above the pick location while the feeder is still feeding. */
+    @Attribute(required = false)
+    protected boolean moveWhileFeeding = false;
+
+    @Attribute(required = false)
+    protected double approachHeightMm = 1.0;
+
     /** Camera height the pocket was taught at; NaN = the camera's default Z. */
     @Attribute(required = false)
     protected double pocketCameraZ = Double.NaN;
@@ -552,8 +559,60 @@ public class OrionFeeder extends ReferenceFeeder {
                 return;
         }
         refineByVisionIfNeeded();
-        runMove(Move.FEED);
+        if (moveWhileFeeding && nozzle != null) {
+            feedWhileMoving(nozzle);
+        } else {
+            runMove(Move.FEED);
+        }
         checkTapeByHolesIfNeeded();
+    }
+
+    /**
+     * Feed on a helper thread (the feeder is on its own bus) while the nozzle already travels to a spot
+     * {@link #approachHeightMm} above the pick location. A tape check afterwards, or the job's own pick move,
+     * continues from there. Returns when both are done.
+     */
+    private void feedWhileMoving(Nozzle nozzle) throws Exception {
+        Location above = basePickLocation().add(new Location(LengthUnit.Millimeters, 0, 0, approachHeightMm, 0));
+        Location overXY = new Location(above.getUnits(), above.getX(), above.getY(), Double.NaN, Double.NaN);
+        Location target = new Location(above.getUnits(), above.getX(), above.getY(), above.getZ(), Double.NaN);
+        final Throwable[] feedError = new Throwable[1];
+        Thread feeding = new Thread(() -> {
+            try {
+                runMove(Move.FEED);
+            } catch (Throwable t) {
+                feedError[0] = t;
+            }
+        }, "orion-feed-" + getName());
+        feeding.start();
+        try {
+            nozzle.moveToSafeZ();
+            nozzle.moveTo(overXY);
+            nozzle.moveTo(target);
+        } finally {
+            feeding.join();
+        }
+        if (feedError[0] instanceof Exception) {
+            throw (Exception) feedError[0];
+        } else if (feedError[0] != null) {
+            throw new Exception(feedError[0]);
+        }
+    }
+
+    public boolean isMoveWhileFeeding() {
+        return moveWhileFeeding;
+    }
+
+    public void setMoveWhileFeeding(boolean v) {
+        moveWhileFeeding = v;
+    }
+
+    public double getApproachHeightMm() {
+        return approachHeightMm;
+    }
+
+    public void setApproachHeightMm(double v) {
+        approachHeightMm = v;
     }
 
     @Override

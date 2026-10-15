@@ -272,3 +272,10 @@ Feeding is one feed move plus the peel that goes with it: the *peel per feed* se
 mm of feed, the unit's coupling rate) is the only peel parameter OpenPnP manages. The unit's separate
 single-shot peel time is internal to the feeder: OpenPnP neither shows, reads nor writes it. The Peel /
 Unpeel buttons (manual loading) use the unit's own peel time when it has one, otherwise 0.5 s.
+
+## Move while feeding
+
+Feeder tab, "Vision: tape / pocket check" panel: **Move the nozzle above the pick spot while the feeder feeds**
+(off by default). The feed runs on its own thread while the nozzle goes to safe Z, over the pick location, and down
+to 1 mm above it (`approachHeightMm`). The tape check (if enabled) still waits for the feed to finish, and the job's
+own pick move continues from there. Check the clearance above the tape before enabling it.
