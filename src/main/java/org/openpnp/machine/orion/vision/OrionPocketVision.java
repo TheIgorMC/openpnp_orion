@@ -80,6 +80,19 @@ public final class OrionPocketVision {
         return sb.length() == 0 ? "none" : sb.toString() + " mm";
     }
 
+    private static volatile long lightOnAt = 0;
+
+    /**
+     * Switch the camera light on now (call it before the camera starts moving, so the light has settled when
+     * it arrives). {@link #find} then only waits for what is left of {@link #LIGHT_DELAY_MS}.
+     */
+    public static void lightOn(Camera camera) throws Exception {
+        if (camera.getLightActuator() != null) {
+            camera.actuateLightBeforeCapture(null);
+            lightOnAt = System.nanoTime();
+        }
+    }
+
     /** Pause between switching the camera light on and the first capture. */
     public static volatile int LIGHT_DELAY_MS = 200;
 
@@ -126,10 +139,16 @@ public final class OrionPocketVision {
      */
     public static Found find(CvPipeline template, Camera camera) throws Exception {
         Found found = new Found();
-        // Light on first and give it time to settle, so the first frame is not overexposed.
+        // Light on (usually already switched on before the camera moved) and given time to settle, so the
+        // first frame is not overexposed.
         if (camera.getLightActuator() != null && LIGHT_DELAY_MS > 0) {
-            camera.actuateLightBeforeCapture(null);
-            Thread.sleep(LIGHT_DELAY_MS);
+            if (System.nanoTime() - lightOnAt > 10_000_000_000L) {
+                lightOn(camera);
+            }
+            long wait = LIGHT_DELAY_MS - (System.nanoTime() - lightOnAt) / 1_000_000L;
+            if (wait > 0) {
+                Thread.sleep(wait);
+            }
         }
         try (CvPipeline pipeline = template.clone()) {
             pipeline.setProperty("camera", camera);

@@ -616,6 +616,7 @@ public class OrionFeeder extends ReferenceFeeder {
         } else {
             look = holeCameraLocation();
         }
+        org.openpnp.machine.orion.vision.OrionPocketVision.lightOn(cam); // lit and settled when it arrives
         final Throwable[] feedError = new Throwable[1];
         Thread feeding = new Thread(() -> {
             try {
@@ -749,6 +750,7 @@ public class OrionFeeder extends ReferenceFeeder {
         }
         OrionSettings st = OrionManager.get().getSettings();
         org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
+        org.openpnp.machine.orion.vision.OrionPocketVision.lightOn(cam);
         org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, holeCameraLocation());
         java.util.List<Location> holes = org.openpnp.machine.orion.vision.OrionHoleVision.findHoles(
                 st.getHolePipeline(), cam, st.getHoleDiameterMm(), st.getHoleSearchMm());
@@ -860,6 +862,7 @@ public class OrionFeeder extends ReferenceFeeder {
         OrionSettings st = OrionManager.get().getSettings();
         org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
         Location base = basePickLocation().convertToUnits(LengthUnit.Millimeters);
+        org.openpnp.machine.orion.vision.OrionPocketVision.lightOn(cam);
         org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, new Location(LengthUnit.Millimeters,
                 base.getX(), base.getY(), pocketCamZ(cam), base.getRotation()));
         org.openpnp.machine.orion.vision.OrionPocketVision.Found res =
