@@ -418,6 +418,14 @@ public class OrionFeederTest {
         f.setHoleNominal(new org.openpnp.model.Location(org.openpnp.model.LengthUnit.Millimeters, 103.5, 50, 20, 0));
         mgr.getSettings().getHolePipeline();
         Configuration.get().save();
+        // An older version stored an attribute that no longer exists: loading must still work.
+        java.io.File machineXml = new java.io.File(dir, "machine.xml");
+        String xml = new String(java.nio.file.Files.readAllBytes(machineXml.toPath()),
+                java.nio.charset.StandardCharsets.UTF_8);
+        String patched = xml.replace("class=\"org.openpnp.machine.orion.OrionFeeder\"",
+                "class=\"org.openpnp.machine.orion.OrionFeeder\" approach-height-mm=\"1.0\"");
+        assertTrue(!patched.equals(xml));
+        java.nio.file.Files.write(machineXml.toPath(), patched.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         Configuration.initialize(dir);
         Configuration.get().load();
         OrionFeeder back = null;

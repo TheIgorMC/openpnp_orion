@@ -188,6 +188,10 @@ public class OrionFeeder extends ReferenceFeeder {
     @Attribute(required = false)
     protected boolean moveWhileFeeding = false;
 
+    /** Obsolete (the nozzle no longer changes Z while feeding); kept only so older machine.xml files still load. */
+    @Attribute(required = false)
+    protected Double approachHeightMm;
+
     /** Bottom vision lost the part: discard, re-check the pocket, feed and pick again (twice at most). */
     @Attribute(required = false)
     protected boolean repickOnVisionFail = true;
