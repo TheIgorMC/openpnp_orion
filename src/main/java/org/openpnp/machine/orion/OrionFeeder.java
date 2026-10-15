@@ -573,6 +573,11 @@ public class OrionFeeder extends ReferenceFeeder {
      * continues from there. Returns when both are done.
      */
     private void feedWhileMoving(Nozzle nozzle) throws Exception {
+        if (tapeCheckWillRun()) {
+            // The camera has to look at the pick spot after the feed anyway: go there instead of the nozzle.
+            feedWhileMovingCamera();
+            return;
+        }
         Location above = basePickLocation().add(new Location(LengthUnit.Millimeters, 0, 0, approachHeightMm, 0));
         Location overXY = new Location(above.getUnits(), above.getX(), above.getY(), Double.NaN, Double.NaN);
         Location target = new Location(above.getUnits(), above.getX(), above.getY(), above.getZ(), Double.NaN);
@@ -589,6 +594,37 @@ public class OrionFeeder extends ReferenceFeeder {
             nozzle.moveToSafeZ();
             nozzle.moveTo(overXY);
             nozzle.moveTo(target);
+        } finally {
+            feeding.join();
+        }
+        if (feedError[0] instanceof Exception) {
+            throw (Exception) feedError[0];
+        } else if (feedError[0] != null) {
+            throw new Exception(feedError[0]);
+        }
+    }
+
+    private void feedWhileMovingCamera() throws Exception {
+        org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
+        Location look;
+        if (tapeTarget == TapeTarget.Pocket) {
+            Location base = basePickLocation().convertToUnits(LengthUnit.Millimeters);
+            look = new Location(LengthUnit.Millimeters, base.getX(), base.getY(), pocketCamZ(cam),
+                    base.getRotation());
+        } else {
+            look = holeCameraLocation();
+        }
+        final Throwable[] feedError = new Throwable[1];
+        Thread feeding = new Thread(() -> {
+            try {
+                runMove(Move.FEED);
+            } catch (Throwable t) {
+                feedError[0] = t;
+            }
+        }, "orion-feed-" + getName());
+        feeding.start();
+        try {
+            org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, look);
         } finally {
             feeding.join();
         }
@@ -895,18 +931,24 @@ public class OrionFeeder extends ReferenceFeeder {
         return pocketBias;
     }
 
+    /** True when the tape / pocket camera check is due after this feed. */
+    private boolean tapeCheckWillRun() {
+        boolean pocket = tapeTarget == TapeTarget.Pocket;
+        if (holeMode == HoleMode.Off || (!pocket && holeNominal == null)) {
+            return false;
+        }
+        if (holeMode == HoleMode.FirstFeedOfJob && holeDoneThisJob) {
+            return false;
+        }
+        return Configuration.get().getMachine().isHomed();
+    }
+
     private void checkTapeByHolesIfNeeded() throws Exception {
         holeShiftMm = 0; // the tape just moved, an older measurement does not apply
         pocketShiftX = 0;
         pocketShiftY = 0;
         boolean pocket = tapeTarget == TapeTarget.Pocket;
-        if (holeMode == HoleMode.Off || (!pocket && holeNominal == null)) {
-            return;
-        }
-        if (holeMode == HoleMode.FirstFeedOfJob && holeDoneThisJob) {
-            return;
-        }
-        if (!Configuration.get().getMachine().isHomed()) {
+        if (!tapeCheckWillRun()) {
             return;
         }
         try {
