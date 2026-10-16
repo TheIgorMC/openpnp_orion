@@ -284,3 +284,20 @@ Feeder tab checkbox "If bottom vision loses the part: check the pocket and pick 
 default, Orion feeders only). When alignment fails after all vision retries, the job discards what is on the nozzle,
 forces the camera tape/pocket check on the next feed, feeds and picks again, and re-aligns. After two such repicks for
 the same placement the normal error stops the job. Vacuum-lost errors are not affected.
+
+## Feed ahead of the pick
+
+Checkbox "Feed this feeder ahead of the pick" (on by default). In a job round with several nozzles, the Orion feeders
+of the placements still to be picked are fed while the current nozzle picks, and the job later just waits for that feed
+to finish. If the next placement uses the *same* Orion feeder, the nozzle first rises 2 x part height after the pick,
+the feed starts, and the nozzle continues to safe Z. Feeders on the same rail share one bus, so their feeds run one after
+the other (but all overlapped with nozzle motion); feeders on different rails run truly in parallel. The look-ahead is
+limited to the placements planned together in one round: the planner does not know the next round yet.
+
+## Jog the tape to the pocket
+
+Checkbox "Pocket: move the tape with the jog command instead of moving the nozzle" plus the threshold (default 0.15 mm).
+When the pocket is off along the tape by more than the threshold (and less than 2 mm), the unit jogs the tape
+(0.1 mm steps) and the pocket is measured again; what remains is applied to the pick location as before. Which way a
+positive jog moves the tape is learned: if the first jog makes it worse, the direction is flipped (and stored) and it
+tries once more. Costs one more camera capture per correction.

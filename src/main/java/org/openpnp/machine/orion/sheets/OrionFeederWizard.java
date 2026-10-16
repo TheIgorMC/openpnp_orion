@@ -71,6 +71,11 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
     private final JTextField pocketTolTf = new JTextField(6);
     private final javax.swing.JCheckBox acrossCb = new javax.swing.JCheckBox("Also correct across the tape");
     private final JLabel holeResult = new JLabel(" ");
+    private final javax.swing.JCheckBox prefeedCb = new javax.swing.JCheckBox(
+            "Feed this feeder ahead of the pick (while the nozzle picks / has just risen)");
+    private final javax.swing.JCheckBox jogCb = new javax.swing.JCheckBox(
+            "Pocket: move the tape with the jog command instead of moving the nozzle");
+    private final JTextField jogMinTf = new JTextField(6);
     private final javax.swing.JCheckBox repickCb = new javax.swing.JCheckBox(
             "If bottom vision loses the part: check the pocket and pick again (2x) instead of stopping");
     private final javax.swing.JCheckBox movingCb = new javax.swing.JCheckBox("Move over the pick spot (XY only) while the feeder feeds");
@@ -245,6 +250,9 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         OrionUi.row(hole, 7, "", holeResult);
         OrionUi.row(hole, 8, "", movingCb);
         OrionUi.row(hole, 9, "", repickCb);
+        OrionUi.row(hole, 10, "", prefeedCb);
+        OrionUi.row(hole, 11, "", jogCb);
+        OrionUi.row(hole, 12, "Jog when the pocket is off along the tape by more than (mm)", jogMinTf);
         contentPanel.add(hole);
 
         // ---- live controls
@@ -452,6 +460,9 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         addWrappedBinding(feeder, "pocketCorrectAcross", acrossCb, "selected");
         addWrappedBinding(feeder, "moveWhileFeeding", movingCb, "selected");
         addWrappedBinding(feeder, "repickOnVisionFail", repickCb, "selected");
+        addWrappedBinding(feeder, "prefeedNext", prefeedCb, "selected");
+        addWrappedBinding(feeder, "jogCorrectPocket", jogCb, "selected");
+        addWrappedBinding(feeder, "jogMinMm", jogMinTf, "text", plain);
         addWrappedBinding(feeder, "visionMode", visionModeCb, "selectedItem");
         addWrappedBinding(feeder, "fiducialPart", fiducialPartCb, "selectedItem");
         addWrappedBinding(feeder, "visionXOnly", xOnlyCb, "selected");

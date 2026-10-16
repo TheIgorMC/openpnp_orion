@@ -192,6 +192,21 @@ public class OrionFeeder extends ReferenceFeeder {
     @Attribute(required = false)
     protected Double approachHeightMm;
 
+    /** Move the tape with the unit's jog when the pocket is off along the tape by more than {@link #jogMinMm}. */
+    @Attribute(required = false)
+    protected boolean jogCorrectPocket = false;
+
+    @Attribute(required = false)
+    protected double jogMinMm = 0.15;
+
+    /** +1 or -1: which way a positive jog moves the pocket along the machine axis (learned). */
+    @Attribute(required = false)
+    protected int jogSign = 1;
+
+    /** Start the next feeders while the nozzle picks (job look-ahead). */
+    @Attribute(required = false)
+    protected boolean prefeedNext = true;
+
     /** Bottom vision lost the part: discard, re-check the pocket, feed and pick again (twice at most). */
     @Attribute(required = false)
     protected boolean repickOnVisionFail = true;
@@ -564,8 +579,11 @@ public class OrionFeeder extends ReferenceFeeder {
                 return;
         }
         refineByVisionIfNeeded();
+        FeedRun pre = takePrefed();
         if (moveWhileFeeding && nozzle != null) {
-            feedWhileMoving(nozzle);
+            feedWhileMoving(nozzle, pre);
+        } else if (pre != null) {
+            pre.finish();
         } else {
             runMove(Move.FEED);
         }
@@ -577,36 +595,72 @@ public class OrionFeeder extends ReferenceFeeder {
      * pick location, Z unchanged. A tape check afterwards, or the job's own pick move, continues from there.
      * Returns when both are done.
      */
-    private void feedWhileMoving(Nozzle nozzle) throws Exception {
+    /** A feed running on a helper thread. */
+    private static class FeedRun {
+        Thread thread;
+        volatile Throwable error;
+
+        void finish() throws Exception {
+            thread.join();
+            if (error instanceof Exception) {
+                throw (Exception) error;
+            } else if (error != null) {
+                throw new Exception(error);
+            }
+        }
+    }
+
+    private transient FeedRun prefed;
+
+    private FeedRun startFeedRun() {
+        FeedRun run = new FeedRun();
+        run.thread = new Thread(() -> {
+            try {
+                runMove(Move.FEED);
+            } catch (Throwable t) {
+                run.error = t;
+            }
+        }, "orion-feed-" + getName());
+        run.thread.start();
+        return run;
+    }
+
+    /**
+     * Start the next feed now, before the job asks for it (the job calls {@link #feed(Nozzle)} later and just
+     * waits for it to finish). Does nothing when one is already running or feeding is switched off.
+     */
+    public synchronized void prefeed() {
+        if (!prefeedNext || prefed != null || getFeedOptions() != FeedOptions.Normal) {
+            return;
+        }
+        Logger.debug("Orion feeder {}: feeding ahead of the pick", getName());
+        prefed = startFeedRun();
+    }
+
+    private synchronized FeedRun takePrefed() {
+        FeedRun r = prefed;
+        prefed = null;
+        return r;
+    }
+
+    private void feedWhileMoving(Nozzle nozzle, FeedRun pre) throws Exception {
         if (tapeCheckWillRun()) {
             // The camera has to look at the pick spot after the feed anyway: go there instead of the nozzle.
-            feedWhileMovingCamera();
+            feedWhileMovingCamera(pre);
             return;
         }
         Location base = basePickLocation();
         Location overXY = new Location(base.getUnits(), base.getX(), base.getY(), Double.NaN, Double.NaN);
-        final Throwable[] feedError = new Throwable[1];
-        Thread feeding = new Thread(() -> {
-            try {
-                runMove(Move.FEED);
-            } catch (Throwable t) {
-                feedError[0] = t;
-            }
-        }, "orion-feed-" + getName());
-        feeding.start();
+        FeedRun run = pre != null ? pre : startFeedRun();
         try {
             nozzle.moveTo(overXY); // XY only, Z stays where it is
         } finally {
-            feeding.join();
+            run.thread.join();
         }
-        if (feedError[0] instanceof Exception) {
-            throw (Exception) feedError[0];
-        } else if (feedError[0] != null) {
-            throw new Exception(feedError[0]);
-        }
+        run.finish();
     }
 
-    private void feedWhileMovingCamera() throws Exception {
+    private void feedWhileMovingCamera(FeedRun pre) throws Exception {
         org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
         Location look;
         if (tapeTarget == TapeTarget.Pocket) {
@@ -617,25 +671,21 @@ public class OrionFeeder extends ReferenceFeeder {
             look = holeCameraLocation();
         }
         org.openpnp.machine.orion.vision.OrionPocketVision.lightOn(cam); // lit and settled when it arrives
-        final Throwable[] feedError = new Throwable[1];
-        Thread feeding = new Thread(() -> {
-            try {
-                runMove(Move.FEED);
-            } catch (Throwable t) {
-                feedError[0] = t;
-            }
-        }, "orion-feed-" + getName());
-        feeding.start();
+        FeedRun run = pre != null ? pre : startFeedRun();
         try {
             org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, look);
         } finally {
-            feeding.join();
+            run.thread.join();
         }
-        if (feedError[0] instanceof Exception) {
-            throw (Exception) feedError[0];
-        } else if (feedError[0] != null) {
-            throw new Exception(feedError[0]);
-        }
+        run.finish();
+    }
+
+    public boolean isPrefeedNext() {
+        return prefeedNext;
+    }
+
+    public void setPrefeedNext(boolean v) {
+        prefeedNext = v;
     }
 
     public boolean isRepickOnVisionFail() {
@@ -859,12 +909,18 @@ public class OrionFeeder extends ReferenceFeeder {
      * supposed to be, {dx, dy} in mm. Throws if no pocket of the expected size is found.
      */
     public synchronized double[] measurePocketShift() throws Exception {
+        return measurePocketShift(true);
+    }
+
+    private synchronized double[] measurePocketShift(boolean moveCamera) throws Exception {
         OrionSettings st = OrionManager.get().getSettings();
         org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
         Location base = basePickLocation().convertToUnits(LengthUnit.Millimeters);
-        org.openpnp.machine.orion.vision.OrionPocketVision.lightOn(cam);
-        org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, new Location(LengthUnit.Millimeters,
-                base.getX(), base.getY(), pocketCamZ(cam), base.getRotation()));
+        if (moveCamera) {
+            org.openpnp.machine.orion.vision.OrionPocketVision.lightOn(cam);
+            org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, new Location(LengthUnit.Millimeters,
+                    base.getX(), base.getY(), pocketCamZ(cam), base.getRotation()));
+        }
         org.openpnp.machine.orion.vision.OrionPocketVision.Found res =
                 org.openpnp.machine.orion.vision.OrionPocketVision.find(st.getPocketPipeline(), cam);
         java.util.List<org.openpnp.machine.orion.vision.OrionPocketVision.Candidate> found = res.candidates;
@@ -942,6 +998,57 @@ public class OrionFeeder extends ReferenceFeeder {
     }
 
     /** True when the tape / pocket camera check is due after this feed. */
+    /**
+     * The pocket is further from the pick spot along the tape than {@link #jogMinMm}: move the tape with the
+     * unit's jog command (0.1 mm steps) and measure again, instead of moving the nozzle. Which way a positive
+     * jog moves the tape is learned: if the first jog makes it worse the sign is flipped and stored.
+     * Returns the remaining shift (applied to the pick location as usual).
+     */
+    private double[] jogTapeToPocket(double[] d) throws Exception {
+        int ai = tapeAxis == org.openpnp.machine.orion.vision.OrionHoleVision.Axis.Y ? 1 : 0;
+        double along = d[ai];
+        if (Math.abs(along) < jogMinMm || Math.abs(along) > 2.0) {
+            return d;
+        }
+        for (int pass = 0; pass < 2; pass++) {
+            int tenths = (int) Math.round(-along * 10.0 * jogSign);
+            if (tenths == 0) {
+                return d;
+            }
+            jogTenthsMm(tenths);
+            OrionManager.get().addLog(rail, org.openpnp.machine.orion.protocol.OrionBusListener.Direction.TX,
+                    String.format("%s: tape jogged %+d x 0.1 mm for a pocket shift of %+.2f mm", getName(),
+                            tenths, along));
+            double[] again = measurePocketShift(false);
+            double now = again[ai];
+            if (Math.abs(now) <= Math.abs(along) + 0.05) {
+                return again;
+            }
+            // Worse: the jog direction is the other way round on this tape. Flip, and try once more.
+            jogSign = -jogSign;
+            Logger.info("Orion feeder {}: jog direction flipped to {}", getName(), jogSign);
+            d = again;
+            along = now;
+        }
+        return d;
+    }
+
+    public boolean isJogCorrectPocket() {
+        return jogCorrectPocket;
+    }
+
+    public void setJogCorrectPocket(boolean v) {
+        jogCorrectPocket = v;
+    }
+
+    public double getJogMinMm() {
+        return jogMinMm;
+    }
+
+    public void setJogMinMm(double v) {
+        jogMinMm = v;
+    }
+
     private boolean tapeCheckWillRun() {
         boolean pocket = tapeTarget == TapeTarget.Pocket;
         if (holeMode == HoleMode.Off || (!pocket && holeNominal == null)) {
@@ -964,6 +1071,9 @@ public class OrionFeeder extends ReferenceFeeder {
         try {
             if (pocket) {
                 double[] d = measurePocketShift();
+                if (jogCorrectPocket) {
+                    d = jogTapeToPocket(d);
+                }
                 pocketShiftX = d[0];
                 pocketShiftY = d[1];
                 Logger.debug("Orion feeder {}: pocket shift {} / {} mm", getName(), d[0], d[1]);

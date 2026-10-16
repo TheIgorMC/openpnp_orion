@@ -63,6 +63,19 @@ public class OrionFeederTest {
     }
 
     @Test
+    void prefeedIsConsumedByTheNextFeedNotRepeated() throws Exception {
+        OrionFeeder f = bound(0);
+        f.setPitchMm(4);
+        f.prefeed();
+        f.prefeed(); // already running: ignored
+        f.feed(null); // waits for the one running, does not feed again
+        SimulatedOrionTransport.SimFeeder s = sim().getFeeders().get(0);
+        assertEquals(1, s.feeds);
+        f.feed(null);
+        assertEquals(2, s.feeds);
+    }
+
+    @Test
     void feederFollowsUnitAcrossRebootAndRailLoss() throws Exception {
         OrionFeeder f = bound(0);
         f.feedOnce();

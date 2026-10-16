@@ -1395,6 +1395,8 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                  */
                 checkPartOff(nozzle, part);
 
+                prefeedUpcoming(plannedPlacement, feeder);
+
                 try {
                     feederPickRetry(nozzle, feeder, jobPlacement, part);
                 }
@@ -1417,6 +1419,45 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
             throw lastException;
         }
         
+        /** Orion feeders of the placements still to be picked in this round: feed them while this one picks. */
+        private void prefeedUpcoming(PlannedPlacement pp, Feeder current) {
+            int i = plannedPlacements.indexOf(pp);
+            for (int j = i + 1; i >= 0 && j < plannedPlacements.size(); j++) {
+                PlannedPlacement next = plannedPlacements.get(j);
+                try {
+                    Feeder f = findFeeder(machine, next.jobPlacement.getPlacement().getPart(),
+                            next.jobPlacement.getPlannedFeeder(), null);
+                    if (f != current && f instanceof org.openpnp.machine.orion.OrionFeeder) {
+                        ((org.openpnp.machine.orion.OrionFeeder) f).prefeed();
+                    }
+                }
+                catch (Exception e) {
+                    // Only an optimization.
+                }
+            }
+        }
+
+        /** True if the next placement of this round takes its part from the same Orion feeder. */
+        private boolean feederNeededAgain(JobPlacement jp, Feeder feeder) {
+            if (!(feeder instanceof org.openpnp.machine.orion.OrionFeeder)
+                    || !((org.openpnp.machine.orion.OrionFeeder) feeder).isPrefeedNext()) {
+                return false;
+            }
+            for (int i = 0; i < plannedPlacements.size() - 1; i++) {
+                if (plannedPlacements.get(i).jobPlacement == jp) {
+                    PlannedPlacement next = plannedPlacements.get(i + 1);
+                    try {
+                        return findFeeder(machine, next.jobPlacement.getPlacement().getPart(),
+                                next.jobPlacement.getPlannedFeeder(), null) == feeder;
+                    }
+                    catch (Exception e) {
+                        return false;
+                    }
+                }
+            }
+            return false;
+        }
+
         private void feed(Feeder feeder, Nozzle nozzle) throws JobProcessorException, Feeder.FeederEmptyException {
             Exception lastException = null;
 
@@ -1501,7 +1542,15 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                 // Pick
                 nozzle.pick(part,feeder);
 
-                // Retract
+                // Retract. An Orion feeder that is needed again right away is fed as soon as the nozzle has
+                // risen clear of the pocket.
+                if (feederNeededAgain(jobPlacement, feeder)) {
+                    double h = part.getHeight().convertToUnits(LengthUnit.Millimeters).getValue();
+                    h = h > 0 ? h : 1.0;
+                    nozzle.moveTo(pickLocation.add(new Location(LengthUnit.Millimeters, 0, 0, 2 * h, 0))
+                            .derive(null, null, null, Double.NaN));
+                    ((org.openpnp.machine.orion.OrionFeeder) feeder).prefeed();
+                }
                 nozzle.moveToSafeZ();
             }
             catch (Exception e) {
