@@ -161,7 +161,24 @@ public class JSerialCommChannel implements SerialChannel {
         }
         int n = port.writeBytes(data, data.length);
         if (n != data.length) {
-            throw new OrionException(OrionException.Kind.TRANSPORT, "Short write on " + portName);
+            // The adapter dropped out (USB reset, brown-out, cable) or the driver stalled: close, reopen once
+            // and send again before giving up.
+            org.pmw.tinylog.Logger.warn("Orion: short write on " + portName + " (" + n + " of " + data.length
+                    + " bytes), reopening the port");
+            close();
+            try {
+                Thread.sleep(150);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            open();
+            n = port.writeBytes(data, data.length);
+            if (n != data.length) {
+                throw new OrionException(OrionException.Kind.TRANSPORT, "Short write on " + portName + ": "
+                        + n + " of " + data.length + " bytes, even after reopening the port. The USB-RS485 "
+                        + "adapter stopped accepting data (unplugged, reset by a power dip, or a bad "
+                        + "cable / hub). Replug it and press Connect.");
+            }
         }
     }
 
