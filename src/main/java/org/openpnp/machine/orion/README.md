@@ -301,3 +301,11 @@ When the pocket is off along the tape by more than the threshold (and less than 
 (0.1 mm steps) and the pocket is measured again; what remains is applied to the pick location as before. Which way a
 positive jog moves the tape is learned: if the first jog makes it worse, the direction is flipped (and stored) and it
 tries once more. Costs one more camera capture per correction.
+
+## What "Teach here" stores for the pocket
+
+The pocket centre as found in machine coordinates, plus the slot-follow / fiducial correction in effect at that moment.
+Each pick is measured against that, not against the pick location, so: the pick location (with whatever nozzle offset
+you gave it) stays exactly as taught, and only the *movement of the pocket* since teaching is added to it, in X and Y
+(untick "Also correct across the tape" to correct only along it). Changing the pick location afterwards does not
+disturb the correction. A pocket taught with an older version keeps working the old way until it is taught again.

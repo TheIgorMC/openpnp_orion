@@ -180,6 +180,17 @@ public class OrionFeeder extends ReferenceFeeder {
     @Element(required = false)
     protected Location pocketBias;
 
+    /**
+     * Where the pocket centre was when taught (machine coordinates), and the slot-follow / fiducial correction that
+     * was in effect then. The shift is measured against this, not against the pick location, so the pick location
+     * can be edited later without the correction undoing it.
+     */
+    @Element(required = false)
+    protected Location pocketTaught;
+
+    @Element(required = false)
+    protected Location pocketExtra;
+
     /** Also correct across the tape (X when the tape runs along Y), not only along it. */
     @Attribute(required = false)
     protected boolean pocketCorrectAcross = true;
@@ -890,6 +901,8 @@ public class OrionFeeder extends ReferenceFeeder {
 
     public void setPocketBias(Location l) {
         pocketBias = l;
+        pocketTaught = null; // set directly: use the offset to the pick location
+        pocketExtra = null;
     }
 
     public double getPocketShiftX() {
@@ -944,15 +957,29 @@ public class OrionFeeder extends ReferenceFeeder {
                 cam.getLocation().convertToUnits(LengthUnit.Millimeters).getY(),
                 org.openpnp.machine.orion.vision.OrionPocketVision.describeWithCentres(found))
                 + String.format(" -> using centre X=%.3f Y=%.3f", c.center.getX(), c.center.getY());
-        if (pocketBias == null) {
+        if (pocketBias == null && pocketTaught == null) {
             // Without the taught offset the camera/nozzle offset error would be applied to every pick.
             throw new Exception(String.format("Feeder '%s': teach the pocket first (Teach here), the offset between "
                     + "the camera's view and the nozzle is not known yet. %s", getName(), lastPocketReport));
         }
-        double bx = pocketBias.convertToUnits(LengthUnit.Millimeters).getX();
-        double by = pocketBias.convertToUnits(LengthUnit.Millimeters).getY();
-        double dx = c.center.getX() - (base.getX() + bx);
-        double dy = c.center.getY() - (base.getY() + by);
+        double dx;
+        double dy;
+        if (pocketTaught != null && pocketExtra != null) {
+            // Compare with where the pocket was taught, corrected for slot follow / fiducial change since then.
+            Location loc = location.convertToUnits(LengthUnit.Millimeters);
+            Location t = pocketTaught.convertToUnits(LengthUnit.Millimeters);
+            Location x0 = pocketExtra.convertToUnits(LengthUnit.Millimeters);
+            double expX = t.getX() + (base.getX() - loc.getX()) - x0.getX();
+            double expY = t.getY() + (base.getY() - loc.getY()) - x0.getY();
+            dx = c.center.getX() - expX;
+            dy = c.center.getY() - expY;
+        } else {
+            // Taught with an older version: offset to the pick location at that time.
+            double bx = pocketBias.convertToUnits(LengthUnit.Millimeters).getX();
+            double by = pocketBias.convertToUnits(LengthUnit.Millimeters).getY();
+            dx = c.center.getX() - (base.getX() + bx);
+            dy = c.center.getY() - (base.getY() + by);
+        }
         if (!pocketCorrectAcross) {
             if (tapeAxis == org.openpnp.machine.orion.vision.OrionHoleVision.Axis.Y) {
                 dx = 0;
@@ -964,8 +991,7 @@ public class OrionFeeder extends ReferenceFeeder {
             throw new Exception(String.format("Feeder '%s': pocket is %.2f mm off, more than the %.2f mm limit.",
                     getName(), Math.hypot(dx, dy), maxHoleCorrectionMm));
         }
-        Logger.debug("Orion feeder {}: pocket {}; pick spot X={} Y={}; shift {} / {}", getName(), lastPocketReport,
-                base.getX() + bx, base.getY() + by, dx, dy);
+        Logger.debug("Orion feeder {}: pocket {}; shift {} / {}", getName(), lastPocketReport, dx, dy);
         return new double[] {dx, dy};
     }
 
@@ -997,6 +1023,9 @@ public class OrionFeeder extends ReferenceFeeder {
         Location base = basePickLocation().convertToUnits(LengthUnit.Millimeters);
         pocketBias = new Location(LengthUnit.Millimeters, c.center.getX() - base.getX(),
                 c.center.getY() - base.getY(), 0, 0);
+        Location loc = location.convertToUnits(LengthUnit.Millimeters);
+        pocketTaught = new Location(LengthUnit.Millimeters, c.center.getX(), c.center.getY(), 0, 0);
+        pocketExtra = new Location(LengthUnit.Millimeters, base.getX() - loc.getX(), base.getY() - loc.getY(), 0, 0);
         pocketCameraZ = cam.getLocation().convertToUnits(LengthUnit.Millimeters).getZ();
         pocketShiftX = 0;
         pocketShiftY = 0;
