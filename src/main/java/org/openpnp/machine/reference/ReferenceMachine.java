@@ -259,6 +259,7 @@ public class ReferenceMachine extends AbstractMachine {
                 throw e;
             }
             fireMachineEnabled();
+            warmUpCameras();
         }
         else {
             // remove homed-flag if machine is disabled
@@ -286,6 +287,34 @@ public class ReferenceMachine extends AbstractMachine {
                 throw e;
             }
             fireMachineDisabled("User requested stop.");
+        }
+    }
+
+    /**
+     * Take a few throw-away pictures from every camera in the background right after the machine is enabled, so
+     * the video stream is open and exposure / white balance have settled before the first real capture.
+     * Switch off with -Dorion.noCameraWarmup=true.
+     */
+    private void warmUpCameras() {
+        if (Boolean.getBoolean("orion.noCameraWarmup")) {
+            return;
+        }
+        for (final org.openpnp.spi.Camera camera : getAllCameras()) {
+            Thread t = new Thread(() -> {
+                long start = System.currentTimeMillis();
+                try {
+                    for (int i = 0; i < 3; i++) {
+                        camera.capture();
+                    }
+                    Logger.info("Camera {} warmed up in {} ms", camera.getName(),
+                            System.currentTimeMillis() - start);
+                }
+                catch (Throwable e) {
+                    Logger.warn("Camera {} warm-up failed: {}", camera.getName(), e.toString());
+                }
+            }, "camera-warmup-" + camera.getName());
+            t.setDaemon(true);
+            t.start();
         }
     }
 
