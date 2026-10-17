@@ -17,6 +17,8 @@ var OVERLAP = 0.15;       // fraction of the picture that is neighbour overlap (
 var SCALE = 0.5;          // output scale: 1.0 = full camera resolution (can be very large), 0.5 = half
 var MANUAL = null;        // or {x0: 10, y0: 10, x1: 110, y1: 90} in machine mm instead of the job's board
 var CAMERA_Z = null;      // null = the camera's default Z; or a number (mm)
+var SUBJECT_Z = null;     // Z of the surface that is photographed (mm): null = the board location's Z. The picture
+                          // scale depends on it (units per pixel is calibrated per Z).
 // ----------------------------------------------------------------------------------------------------------------
 
 load(scripting.getScriptsDirectory().toString() + '/Examples/JavaScript/Utility.js');
@@ -28,17 +30,35 @@ function log(msg) {
     print('Board snapshot: ' + msg);
 }
 
+/** The part of the picture that is not black border, found on the middle row and column, with a small safety margin. */
+function usableRect(img) {
+    var w = img.getWidth(), h = img.getHeight();
+    var T = 3 * 14;
+    function lum(x, y) {
+        var p = img.getRGB(x, y);
+        return ((p >> 16) & 255) + ((p >> 8) & 255) + (p & 255);
+    }
+    var cx = w >> 1, cy = h >> 1;
+    var l = 0; while (l < cx && lum(l, cy) < T) l++;
+    var r = w - 1; while (r > cx && lum(r, cy) < T) r--;
+    var t = 0; while (t < cy && lum(cx, t) < T) t++;
+    var b = h - 1; while (b > cy && lum(cx, b) < T) b--;
+    var m = Math.round(0.02 * Math.min(w, h));
+    return {x: l + m, y: t + m, w: (r - l + 1) - 2 * m, h: (b - t + 1) - 2 * m};
+}
+
 with (imports) {
     task(function () {
         var camera = machine.getDefaultHead().getDefaultCamera();
         var name = 'board';
         var x0, y0, x1, y1;
+        var bl = null;
 
         if (MANUAL) {
             x0 = MANUAL.x0; y0 = MANUAL.y0; x1 = MANUAL.x1; y1 = MANUAL.y1;
         } else {
             // The board (or panel) selected in the Job tab; the first one of the job if nothing is selected.
-            var bl = gui.getJobTab().getSelection();
+            bl = gui.getJobTab().getSelection();
             if (bl === null) {
                 var locs = gui.getJobTab().getJob().getBoardAndPanelLocations();
                 if (locs.size() < 1) {
@@ -84,14 +104,37 @@ with (imports) {
 
         var z = CAMERA_Z !== null ? CAMERA_Z
             : camera.getDefaultZ().convertToUnits(LengthUnit.Millimeters).getValue();
-        var upp = camera.getUnitsPerPixelAtZ().convertToUnits(LengthUnit.Millimeters);
+        // Scale at the photographed surface, not at the camera's default Z.
+        var upp;
+        if (SUBJECT_Z !== null) {
+            upp = camera.getUnitsPerPixel(new Length(SUBJECT_Z, LengthUnit.Millimeters));
+        } else if (bl !== null) {
+            upp = camera.getUnitsPerPixel(bl.getLocation().getLengthZ());
+        } else {
+            upp = camera.getUnitsPerPixelAtZ();
+        }
+        upp = upp.convertToUnits(LengthUnit.Millimeters);
+        log('scale ' + upp.getX().toFixed(4) + ' mm/px at '
+            + (SUBJECT_Z !== null ? 'SUBJECT_Z ' + SUBJECT_Z
+                : bl !== null ? 'the board location Z ' + bl.getLocation().getLengthZ()
+                    .convertToUnits(LengthUnit.Millimeters).getValue().toFixed(2) : 'the camera default Z')
+            + ' (if this Z is wrong, set SUBJECT_Z; the seams show a wrong scale)');
         var uppX = upp.getX(), uppY = upp.getY();
-        var fovX = camera.getWidth() * uppX, fovY = camera.getHeight() * uppY;
+
+        // One test picture at the centre of the area: the camera image may have black borders (lens distortion
+        // correction), those must not be stitched in. Find the usable part along the middle row and column.
+        MovableUtils.moveToLocationAtSafeZ(camera, new Location(LengthUnit.Millimeters, (x0 + x1) / 2,
+            (y0 + y1) / 2, z, camera.getLocation().getRotation()));
+        var test = camera.lightSettleAndCapture();
+        var valid = usableRect(test);
+        log('picture ' + test.getWidth() + ' x ' + test.getHeight() + ' px, usable part ' + valid.w + ' x ' + valid.h
+            + ' px at ' + uppX.toFixed(4) + ' mm/px');
+        var fovX = valid.w * uppX, fovY = valid.h * uppY;
         var stepX = fovX * (1 - OVERLAP), stepY = fovY * (1 - OVERLAP);
         var cols = Math.max(1, Math.ceil((x1 - x0) / stepX));
         var rows = Math.max(1, Math.ceil((y1 - y0) / stepY));
         log('area X ' + x0.toFixed(1) + '..' + x1.toFixed(1) + ' Y ' + y0.toFixed(1) + '..' + y1.toFixed(1)
-            + ' mm, ' + cols + ' x ' + rows + ' pictures (field of view ' + fovX.toFixed(1) + ' x '
+            + ' mm, ' + cols + ' x ' + rows + ' pictures (usable field of view ' + fovX.toFixed(1) + ' x '
             + fovY.toFixed(1) + ' mm)');
 
         var outW = Math.ceil((x1 - x0) / uppX * SCALE);
@@ -116,7 +159,7 @@ with (imports) {
                 var img = camera.lightSettleAndCapture();
                 // Centre part of the picture, step size, in picture pixels.
                 var sw = stepX / uppX, sh = stepY / uppY;
-                var sx = (img.getWidth() - sw) / 2, sy = (img.getHeight() - sh) / 2;
+                var sx = valid.x + (valid.w - sw) / 2, sy = valid.y + (valid.h - sh) / 2;
                 // Destination: world (cx +- step/2, cy +- step/2); picture top = larger Y.
                 var dx = (cx - stepX / 2 - x0) / uppX * SCALE;
                 var dy = (y1 - (cy + stepY / 2)) / uppY * SCALE;
