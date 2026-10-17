@@ -324,21 +324,12 @@ var OrionSnap = (function () {
      * components: {...}}. One folder per run, one sub-folder per board.
      */
     function runAll(theJob, cfg) {
-        var jobName = 'job';
-        try {
-            var f = theJob.getFile();
-            if (f !== null) {
-                jobName = safe(String(f.getName()).replace(/\.[^.]*$/, ''));
-            }
-        } catch (e) {
-            // unnamed job
-        }
-        var parent = new File(rootDir(), jobName + '_' + stamp());
+        var parent = new File(rootDir(), 'Batch-' + stamp());
         var boards = boardsOf(theJob);
-        log('job ' + jobName + ': ' + boards.length + ' boards, ' + cfg.mode + ', into ' + parent.getAbsolutePath());
+        log('batch: ' + boards.length + ' boards, ' + cfg.mode + ', into ' + parent.getAbsolutePath());
         for (var i = 0; i < boards.length; i++) {
             var bl = boards[i];
-            var sub = new File(parent, ('00' + (i + 1)).slice(-2) + '_' + holderName(bl));
+            var sub = new File(parent, 'brd' + (i + 1));
             try {
                 if (cfg.mode === 'board' || cfg.mode === 'both') {
                     board(bl, cfg.board, sub);
@@ -348,7 +339,7 @@ var OrionSnap = (function () {
                 }
             } catch (e) {
                 // One board failing must not stop the others (or the end of a job).
-                log('board ' + holderName(bl) + ' failed: ' + e);
+                log('brd' + (i + 1) + ' (' + holderName(bl) + ') failed: ' + e);
             }
         }
         log('all boards done: ' + parent.getAbsolutePath());

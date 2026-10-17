@@ -1,7 +1,7 @@
 /**
  * Orion snapshots of ALL boards of the open job: runs the board picture, the per-component pictures, or both, on every
  * board in turn. One folder per run, one sub-folder per board:
- *   %USERPROFILE%\.openpnp2\board_snapshots\<job>_<date-time>\01_<board>\ (board picture + components\ folder)
+ *   %USERPROFILE%\.openpnp2\board_snapshots\Batch-<date-time>\brd1\, brd2\ ... (board picture + components\ folder)
  *
  * Install: copy this file AND Orion_Snapshot_Lib.js into  %USERPROFILE%\.openpnp2\scripts\  and run it from the
  * Scripts menu. To run it automatically when a job finishes, also copy Events\Job.Finished.Orion_Snapshots.js into
