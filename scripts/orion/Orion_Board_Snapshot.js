@@ -1,5 +1,5 @@
 /**
- * Orion board snapshot: drives the head camera over the first board of the job (or a rectangle you give below),
+ * Orion board snapshot: drives the head camera over the board selected in the Job tab (the first one if none is selected, or a rectangle you give below),
  * takes overlapping pictures and stitches their centres into one image of the whole board, for diagnostics
  * (placement accuracy, what is where, fiducials, solder paste ...).
  *
@@ -36,12 +36,16 @@ with (imports) {
         if (MANUAL) {
             x0 = MANUAL.x0; y0 = MANUAL.y0; x1 = MANUAL.x1; y1 = MANUAL.y1;
         } else {
-            var job = gui.getJobTab().getJob();
-            var locs = job.getBoardLocations();
-            if (locs.size() < 1) {
-                throw new Error('The job has no board. Add a board to the job, or set MANUAL in the script.');
+            // The board (or panel) selected in the Job tab; the first one of the job if nothing is selected.
+            var bl = gui.getJobTab().getSelection();
+            if (bl === null) {
+                var locs = gui.getJobTab().getJob().getBoardAndPanelLocations();
+                if (locs.size() < 1) {
+                    throw new Error('The job has no board. Add a board to the job, or set MANUAL in the script.');
+                }
+                bl = locs.get(0);
+                log('nothing selected in the Job tab, using the first one');
             }
-            var bl = locs.get(0);
             name = String(bl.getPlacementsHolder().getName() || 'board').replace(/[^A-Za-z0-9_-]/g, '_');
             var dim = bl.getPlacementsHolder().getDimensions().convertToUnits(LengthUnit.Millimeters);
             if (dim.getX() <= 0 || dim.getY() <= 0) {
