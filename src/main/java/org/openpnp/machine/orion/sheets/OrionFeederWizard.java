@@ -78,7 +78,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
     private final JTextField jogMinTf = new JTextField(6);
     private final javax.swing.JCheckBox repickCb = new javax.swing.JCheckBox(
             "If bottom vision loses the part: check the pocket and pick again (2x) instead of stopping");
-    private final javax.swing.JCheckBox movingCb = new javax.swing.JCheckBox("Move over the pick spot (XY only) while the feeder feeds");
+    private final javax.swing.JCheckBox movingCb = new javax.swing.JCheckBox("Move (XY + rotation) over the pick spot while the feeder feeds");
 
     /** The result text can be long: wrap it on its own line instead of widening the tab. */
     private void setHoleResult(String text) {

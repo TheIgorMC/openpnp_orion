@@ -646,21 +646,22 @@ public class OrionFeeder extends ReferenceFeeder {
     private void feedWhileMoving(Nozzle nozzle, FeedRun pre) throws Exception {
         if (tapeCheckWillRun()) {
             // The camera has to look at the pick spot after the feed anyway: go there instead of the nozzle.
-            feedWhileMovingCamera(pre);
+            feedWhileMovingCamera(nozzle, pre);
             return;
         }
         Location base = basePickLocation();
-        Location overXY = new Location(base.getUnits(), base.getX(), base.getY(), Double.NaN, Double.NaN);
+        // XY and the pick rotation together, so the nozzle is already turned when it arrives.
+        Location overXY = new Location(base.getUnits(), base.getX(), base.getY(), Double.NaN, base.getRotation());
         FeedRun run = pre != null ? pre : startFeedRun();
         try {
-            nozzle.moveTo(overXY); // XY only, Z stays where it is
+            nozzle.moveTo(overXY); // XY and rotation, Z stays where it is
         } finally {
             run.thread.join();
         }
         run.finish();
     }
 
-    private void feedWhileMovingCamera(FeedRun pre) throws Exception {
+    private void feedWhileMovingCamera(Nozzle nozzle, FeedRun pre) throws Exception {
         org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
         Location look;
         if (tapeTarget == TapeTarget.Pocket) {
@@ -673,6 +674,11 @@ public class OrionFeeder extends ReferenceFeeder {
         org.openpnp.machine.orion.vision.OrionPocketVision.lightOn(cam); // lit and settled when it arrives
         FeedRun run = pre != null ? pre : startFeedRun();
         try {
+            // Turn the nozzle to the pick rotation while the feed runs, so the pick move needs no rotation.
+            double rot = basePickLocation().getRotation();
+            if (!Double.isNaN(rot)) {
+                nozzle.moveTo(new Location(LengthUnit.Millimeters, Double.NaN, Double.NaN, Double.NaN, rot));
+            }
             org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, look);
         } finally {
             run.thread.join();
