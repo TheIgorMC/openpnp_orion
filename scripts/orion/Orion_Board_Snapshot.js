@@ -12,6 +12,7 @@
 
 // ---- settings -------------------------------------------------------------------------------------------------
 var MARGIN_MM = 2.0;      // extra border around the board
+var EXTENT_MARGIN_MM = 4.0; // extra border around the placements when the board has no dimensions
 var OVERLAP = 0.15;       // fraction of the picture that is neighbour overlap (the overlap edge is cut away)
 var SCALE = 0.5;          // output scale: 1.0 = full camera resolution (can be very large), 0.5 = half
 var MANUAL = null;        // or {x0: 10, y0: 10, x1: 110, y1: 90} in machine mm instead of the job's board
@@ -47,19 +48,34 @@ with (imports) {
                 log('nothing selected in the Job tab, using the first one');
             }
             name = String(bl.getPlacementsHolder().getName() || 'board').replace(/[^A-Za-z0-9_-]/g, '_');
-            var dim = bl.getPlacementsHolder().getDimensions().convertToUnits(LengthUnit.Millimeters);
-            if (dim.getX() <= 0 || dim.getY() <= 0) {
-                throw new Error('The board has no dimensions set. Set them on the board, or use MANUAL.');
-            }
-            // The four corners in machine coordinates (handles rotation and flipping of the board location).
+            // The four corners of the board's dimensions if they are set, otherwise the extent of the placements
+            // (all of them, fiducials included) plus EXTENT_MARGIN_MM, in machine coordinates.
             var xs = [], ys = [];
-            var corners = [[0, 0], [dim.getX(), 0], [0, dim.getY()], [dim.getX(), dim.getY()]];
-            for (var i = 0; i < 4; i++) {
-                var c = Utils2D.calculateBoardPlacementLocation(bl,
-                    new Location(LengthUnit.Millimeters, corners[i][0], corners[i][1], 0, 0))
-                    .convertToUnits(LengthUnit.Millimeters);
-                xs.push(c.getX());
-                ys.push(c.getY());
+            var dim = bl.getPlacementsHolder().getDimensions().convertToUnits(LengthUnit.Millimeters);
+            if (dim.getX() > 0 && dim.getY() > 0) {
+                var corners = [[0, 0], [dim.getX(), 0], [0, dim.getY()], [dim.getX(), dim.getY()]];
+                for (var i = 0; i < 4; i++) {
+                    var c = Utils2D.calculateBoardPlacementLocation(bl,
+                        new Location(LengthUnit.Millimeters, corners[i][0], corners[i][1], 0, 0))
+                        .convertToUnits(LengthUnit.Millimeters);
+                    xs.push(c.getX());
+                    ys.push(c.getY());
+                }
+            } else {
+                var pls = bl.getPlacementsHolder().getPlacements();
+                for (var j = 0; j < pls.size(); j++) {
+                    var q = Utils2D.calculateBoardPlacementLocation(bl, pls.get(j).getLocation())
+                        .convertToUnits(LengthUnit.Millimeters);
+                    xs.push(q.getX());
+                    ys.push(q.getY());
+                }
+                if (xs.length < 1) {
+                    throw new Error('The board has no dimensions and no placements. Use MANUAL in the script.');
+                }
+                log('no board dimensions, using the extent of ' + xs.length + ' placements + ' + EXTENT_MARGIN_MM
+                    + ' mm');
+                xs.push(Math.min.apply(null, xs) - EXTENT_MARGIN_MM, Math.max.apply(null, xs) + EXTENT_MARGIN_MM);
+                ys.push(Math.min.apply(null, ys) - EXTENT_MARGIN_MM, Math.max.apply(null, ys) + EXTENT_MARGIN_MM);
             }
             x0 = Math.min.apply(null, xs); x1 = Math.max.apply(null, xs);
             y0 = Math.min.apply(null, ys); y1 = Math.max.apply(null, ys);
