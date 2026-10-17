@@ -129,7 +129,7 @@ with (imports) {
         }
         g.dispose();
 
-        var dir = new File(System.getProperty('user.home'), '.openpnp2/board_snapshots');
+        var dir = new File(java.lang.System.getProperty('user.home'), '.openpnp2/board_snapshots');
         dir.mkdirs();
         var stamp = new java.text.SimpleDateFormat('yyyyMMdd-HHmmss').format(new java.util.Date());
         var file = new File(dir, name + '_' + stamp + '.png');

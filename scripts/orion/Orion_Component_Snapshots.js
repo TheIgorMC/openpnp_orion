@@ -80,7 +80,7 @@ with (imports) {
         }
 
         var stamp = new java.text.SimpleDateFormat('yyyyMMdd-HHmmss').format(new java.util.Date());
-        var dir = new File(System.getProperty('user.home'), '.openpnp2/board_snapshots/' + name + '_' + stamp);
+        var dir = new File(java.lang.System.getProperty('user.home'), '.openpnp2/board_snapshots/' + name + '_' + stamp);
         dir.mkdirs();
         var csv = new java.lang.StringBuilder('number,designator,part,x_mm,y_mm\n');
         log(order.length + ' pictures into ' + dir.getAbsolutePath());
