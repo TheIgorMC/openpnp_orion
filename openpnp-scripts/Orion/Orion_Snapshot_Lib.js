@@ -410,7 +410,7 @@ var OrionSnap = (function () {
                 g.drawLine(w / 2 - 25, h / 2, w / 2 + 25, h / 2);
                 g.drawLine(w / 2, h / 2 - 25, w / 2, h / 2 + 25);
                 g.setFont(new Font('SansSerif', Font.BOLD, 20));
-                g.drawString(p.id + (p.part ? '  ' + p.part : ''), 8, 24);
+                text(g, p.id + (p.part ? '  ' + p.part : ''), 8, 24);
                 g.dispose();
             }
             var num = ('000' + (n + 1)).slice(-3);
@@ -441,6 +441,11 @@ var OrionSnap = (function () {
             }
         }
         return null;
+    }
+
+    /** drawString with explicit int coordinates (the script engine cannot choose between the int and float overloads). */
+    function text(g, str, x, y) {
+        g['drawString(java.lang.String,int,int)'](String(str), Math.round(x), Math.round(y));
     }
 
     function fit(g, img, x, y, w, h) {
@@ -517,13 +522,13 @@ var OrionSnap = (function () {
         g.setColor(Color.WHITE);
         g.setFont(new Font('SansSerif', Font.BOLD, 28));
         for (var c2 = 0; c2 < cols.length; c2++) {
-            g.drawString(cols[c2].toUpperCase(), 10 + c2 * (cellW + 10), 34);
+            text(g, cols[c2].toUpperCase(), 10 + c2 * (cellW + 10), 34);
         }
         var y = 50;
         for (var r2 = 0; r2 < rows.length; r2++) {
             g.setColor(Color.WHITE);
             g.setFont(new Font('SansSerif', Font.BOLD, 22));
-            g.drawString(rows[r2].name, 10, y + 26);
+            text(g, rows[r2].name, 10, y + 26);
             for (var c3 = 0; c3 < cols.length; c3++) {
                 var im3 = rows[r2].imgs[cols[c3]];
                 if (im3) {
@@ -572,7 +577,7 @@ var OrionSnap = (function () {
             var cx = 10 + (k % perRow) * cardW, cy = 10 + Math.floor(k / perRow) * cardH;
             g.setColor(Color.WHITE);
             g.setFont(new Font('SansSerif', Font.BOLD, 20));
-            g.drawString(list[k], cx, cy + 24);
+            text(g, list[k], cx, cy + 24);
             for (var c = 0; c < cols.length; c++) {
                 var im = imageIn(pdir, list[k] + '_' + cols[c]);
                 if (im !== null) {
