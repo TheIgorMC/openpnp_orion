@@ -324,6 +324,6 @@ is checked, then every Nth, plus the feed after a failed pick. The measured shif
 
 ## Pick trim per nozzle
 
-Bus manager, Feeder identification tab: one X/Y trim (mm) per nozzle. It is added to the pick location of every Orion
+Bus manager, "Nozzle pick trim" tab: one X/Y trim (mm) per nozzle. It is added to the pick location of every Orion
 feeder when that nozzle picks (not to the camera's look position), to absorb a nozzle offset error: if N2 lands 0.05 mm
 to the left of where N1 does, give N2 a trim of +0.05 in X. It uses the nozzle the job last fed the feeder for.
