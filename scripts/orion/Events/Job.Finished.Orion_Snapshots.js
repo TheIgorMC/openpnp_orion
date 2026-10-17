@@ -8,7 +8,8 @@
 
 // ---- settings -------------------------------------------------------------------------------------------------
 var ENABLED = true;
-var MODE = 'components';   // 'board', 'components' or 'both'
+var STAGE = 'during';      // folder Batch-<date-time>-<STAGE>
+var MODE = 'both';         // 'board', 'components' or 'both'
 
 var MARGIN_MM = 2.0;
 var EXTENT_MARGIN_MM = 4.0;
@@ -27,6 +28,7 @@ if (ENABLED) {
     try {
         load(scripting.getScriptsDirectory().toString() + '/Orion_Snapshot_Lib.js');
         OrionSnap.runAll(job, {
+            stage: STAGE,
             mode: MODE,
             board: {marginMm: MARGIN_MM, extentMarginMm: EXTENT_MARGIN_MM, overlap: OVERLAP, scale: SCALE,
                 manual: null, cameraZ: CAMERA_Z, subjectZ: SUBJECT_Z, measureScale: MEASURE_SCALE},

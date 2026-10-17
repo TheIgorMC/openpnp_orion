@@ -9,6 +9,7 @@
  */
 
 // ---- settings -------------------------------------------------------------------------------------------------
+var STAGE = '';            // name added to the folder: Batch-<date-time>-<STAGE> ('' = none)
 var MODE = 'components';   // 'board' (stitched picture), 'components' (one picture per placement) or 'both'
 
 // board picture
@@ -32,6 +33,7 @@ load(scripting.getScriptsDirectory().toString() + '/Examples/JavaScript/Utility.
 
 task(function () {
     OrionSnap.runAll(gui.getJobTab().getJob(), {
+        stage: STAGE,
         mode: MODE,
         board: {marginMm: MARGIN_MM, extentMarginMm: EXTENT_MARGIN_MM, overlap: OVERLAP, scale: SCALE, manual: null,
             cameraZ: CAMERA_Z, subjectZ: SUBJECT_Z, measureScale: MEASURE_SCALE},

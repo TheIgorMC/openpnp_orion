@@ -320,13 +320,14 @@ var OrionSnap = (function () {
     }
 
     /**
-     * The same snapshot of every board of the job. cfg: {mode: 'board' | 'components' | 'both', board: {...},
+     * The same snapshot of every board of the job. cfg: {stage: 'before' | 'during' | 'after' | '' (goes into the folder name), mode: 'board' | 'components' | 'both', board: {...},
      * components: {...}}. One folder per run, one sub-folder per board.
      */
     function runAll(theJob, cfg) {
-        var parent = new File(rootDir(), 'Batch-' + stamp());
+        var stage = cfg.stage ? String(cfg.stage) : '';
+        var parent = new File(rootDir(), 'Batch-' + stamp() + (stage ? '-' + safe(stage) : ''));
         var boards = boardsOf(theJob);
-        log('batch: ' + boards.length + ' boards, ' + cfg.mode + ', into ' + parent.getAbsolutePath());
+        log('batch' + (stage ? ' (' + stage + ')' : '') + ': ' + boards.length + ' boards, ' + cfg.mode + ', into ' + parent.getAbsolutePath());
         for (var i = 0; i < boards.length; i++) {
             var bl = boards[i];
             var sub = new File(parent, 'brd' + (i + 1));
