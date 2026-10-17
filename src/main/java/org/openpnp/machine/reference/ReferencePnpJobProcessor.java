@@ -1402,6 +1402,9 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                 }
                 catch (JobProcessorException jpe) {
                     lastException = jpe;
+                    if (feeder instanceof org.openpnp.machine.orion.OrionFeeder) {
+                        ((org.openpnp.machine.orion.OrionFeeder) feeder).notifyPickFailed();
+                    }
                     discard(nozzle);
                     continue;
                 }

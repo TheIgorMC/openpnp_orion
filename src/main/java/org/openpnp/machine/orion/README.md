@@ -309,3 +309,10 @@ Each pick is measured against that, not against the pick location, so: the pick 
 you gave it) stays exactly as taught, and only the *movement of the pocket* since teaching is added to it, in X and Y
 (untick "Also correct across the tape" to correct only along it). Changing the pick location afterwards does not
 disturb the correction. A pocket taught with an older version keeps working the old way until it is taught again.
+
+## Check "only after a failed pick"
+
+New choice in the Check list. No camera check on normal feeds. When a pick from the feeder fails (vacuum not detected,
+or bottom vision lost the part and the job repicks), the next feed runs the check, and the measured shift is kept
+for the following picks until the next check. In the "first feed of each job" mode the shift now also stays in effect
+for the rest of the job.

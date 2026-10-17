@@ -116,7 +116,8 @@ public class OrionFeeder extends ReferenceFeeder {
     public enum HoleMode {
         Off("Off"),
         EveryFeed("After every feed"),
-        FirstFeedOfJob("After the first feed of each job");
+        FirstFeedOfJob("After the first feed of each job"),
+        OnPickFail("Only after a failed pick");
 
         private final String label;
 
@@ -716,7 +717,15 @@ public class OrionFeeder extends ReferenceFeeder {
     /** Make the next feed run the tape / pocket check even in "first feed of job" mode. */
     public void forceTapeCheckNextFeed() {
         holeDoneThisJob = false;
+        checkAfterFail = true;
     }
+
+    /** A pick from this feeder failed: in "only after a failed pick" mode the next feed runs the check. */
+    public void notifyPickFailed() {
+        checkAfterFail = true;
+    }
+
+    private transient boolean checkAfterFail;
 
     public boolean isMoveWhileFeeding() {
         return moveWhileFeeding;
@@ -1092,17 +1101,26 @@ public class OrionFeeder extends ReferenceFeeder {
         if (holeMode == HoleMode.FirstFeedOfJob && holeDoneThisJob) {
             return false;
         }
+        if (holeMode == HoleMode.OnPickFail && !checkAfterFail) {
+            return false;
+        }
         return Configuration.get().getMachine().isHomed();
     }
 
     private void checkTapeByHolesIfNeeded() throws Exception {
-        holeShiftMm = 0; // the tape just moved, an older measurement does not apply
-        pocketShiftX = 0;
-        pocketShiftY = 0;
         boolean pocket = tapeTarget == TapeTarget.Pocket;
         if (!tapeCheckWillRun()) {
+            if (holeMode == HoleMode.EveryFeed || holeMode == HoleMode.Off) {
+                holeShiftMm = 0; // the tape just moved, an older measurement does not apply
+                pocketShiftX = 0;
+                pocketShiftY = 0;
+            } // else: the last measurement still stands until the next check
             return;
         }
+        holeShiftMm = 0;
+        pocketShiftX = 0;
+        pocketShiftY = 0;
+        checkAfterFail = false;
         try {
             if (pocket) {
                 double[] d = measurePocketShift();
