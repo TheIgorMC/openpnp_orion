@@ -17,6 +17,7 @@ var OVERLAP = 0.15;       // fraction of the picture that is neighbour overlap (
 var SCALE = 0.5;          // output scale: 1.0 = full camera resolution (can be very large), 0.5 = half
 var MANUAL = null;        // or {x0: 10, y0: 10, x1: 110, y1: 90} in machine mm instead of the job's board
 var CAMERA_Z = null;      // null = the camera's default Z; or a number (mm)
+var MEASURE_SCALE = true; // measure the real mm per pixel from the pictures themselves (recommended)
 var SUBJECT_Z = null;     // Z of the surface that is photographed (mm): null = the board location's Z. The picture
                           // scale depends on it (units per pixel is calibrated per Z).
 // ----------------------------------------------------------------------------------------------------------------
@@ -28,6 +29,44 @@ var imports = new JavaImporter(org.openpnp.model, org.openpnp.util, java.awt, ja
 function log(msg) {
     Packages.org.pmw.tinylog.Logger.info('Board snapshot: ' + msg);
     print('Board snapshot: ' + msg);
+}
+
+/**
+ * Real mm per pixel: take pictures with the camera moved by known distances and measure how far the picture moved
+ * (phase correlation on the usable part). Returns {x, y} or null.
+ */
+function measureScale(camera, cx, cy, z, base, valid) {
+    var Mat = Packages.org.opencv.core.Mat, CvType = Packages.org.opencv.core.CvType;
+    var Rect = Packages.org.opencv.core.Rect, Imgproc = Packages.org.opencv.imgproc.Imgproc;
+    var rot = camera.getLocation().getRotation();
+    function gray(img) {
+        var bgr = Packages.org.openpnp.util.OpenCvUtils.toMat(img);
+        var gr = new Mat();
+        Imgproc.cvtColor(bgr, gr, Imgproc.COLOR_BGR2GRAY);
+        var f = new Mat();
+        gr.convertTo(f, CvType.CV_32F);
+        var sub = f.submat(new Rect(valid.x, valid.y, valid.w, valid.h)).clone();
+        bgr.release(); gr.release(); f.release();
+        return sub;
+    }
+    function shot(x, y) {
+        var loc = new Packages.org.openpnp.model.Location(Packages.org.openpnp.model.LengthUnit.Millimeters, x, y, z,
+            rot);
+        Packages.org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(camera, loc);
+        return gray(camera.lightSettleAndCapture());
+    }
+    var DX = 2.0, DY = 1.5; // mm, small compared with the field of view
+    var a = gray(base);
+    var bx = shot(cx + DX, cy);
+    var sx = Imgproc.phaseCorrelate(a, bx);
+    var by = shot(cx, cy + DY);
+    var sy = Imgproc.phaseCorrelate(a, by);
+    a.release(); bx.release(); by.release();
+    var px = Math.abs(sx.x), py = Math.abs(sy.y);
+    if (px < 5 || py < 5 || Math.abs(sx.y) > px * 0.2 || Math.abs(sy.x) > py * 0.2) {
+        return null; // the picture did not move along the expected axis: no reliable measurement
+    }
+    return {x: DX / px, y: DY / py};
 }
 
 /** The part of the picture that is not black border, found on the middle row and column, with a small safety margin. */
@@ -129,10 +168,22 @@ with (imports) {
         var valid = usableRect(test);
         log('picture ' + test.getWidth() + ' x ' + test.getHeight() + ' px, usable part ' + valid.w + ' x ' + valid.h
             + ' px at ' + uppX.toFixed(4) + ' mm/px');
+        if (MEASURE_SCALE) {
+            var m = measureScale(camera, (x0 + x1) / 2, (y0 + y1) / 2, z, test, valid);
+            if (m !== null) {
+                log('measured scale ' + m.x.toFixed(4) + ' x ' + m.y.toFixed(4) + ' mm/px (calibration said '
+                    + uppX.toFixed(4) + ' x ' + uppY.toFixed(4) + ')');
+                uppX = m.x;
+                uppY = m.y;
+            } else {
+                log('could not measure the scale (not enough texture in the picture?), using the calibration');
+            }
+        }
         var fovX = valid.w * uppX, fovY = valid.h * uppY;
-        var stepX = fovX * (1 - OVERLAP), stepY = fovY * (1 - OVERLAP);
-        var cols = Math.max(1, Math.ceil((x1 - x0) / stepX));
-        var rows = Math.max(1, Math.ceil((y1 - y0) / stepY));
+        var cols = Math.max(1, Math.ceil((x1 - x0) / (fovX * (1 - OVERLAP))));
+        var rows = Math.max(1, Math.ceil((y1 - y0) / (fovY * (1 - OVERLAP))));
+        // Spread the pictures evenly over the area (the step is at most what the overlap allows).
+        var stepX = (x1 - x0) / cols, stepY = (y1 - y0) / rows;
         log('area X ' + x0.toFixed(1) + '..' + x1.toFixed(1) + ' Y ' + y0.toFixed(1) + '..' + y1.toFixed(1)
             + ' mm, ' + cols + ' x ' + rows + ' pictures (usable field of view ' + fovX.toFixed(1) + ' x '
             + fovY.toFixed(1) + ' mm)');
@@ -146,8 +197,7 @@ with (imports) {
         g.fillRect(0, 0, outW, outH);
 
         // The grid is centred on the area; serpentine order to keep travel short.
-        var gridW = cols * stepX, gridH = rows * stepY;
-        var gx0 = x0 + ((x1 - x0) - gridW) / 2, gy0 = y0 + ((y1 - y0) - gridH) / 2;
+        var gx0 = x0, gy0 = y0;
         var n = 0;
         for (var r = 0; r < rows; r++) {
             for (var k = 0; k < cols; k++) {
