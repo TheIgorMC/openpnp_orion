@@ -313,7 +313,8 @@ var OrionSnap = (function () {
     /**
      * One close-up per placement, into dir (a File, created), cropped to the part's footprint + cropMarginMm each side
      * (fallbackMm square if the package has no footprint). o: {includeFiducials, onlyEnabled, onlyBoardSide, cameraZ,
-     * crosshair, crop (default true), cropMarginMm (2), fallbackMm (6), format 'jpg' | 'png', jpgQuality (90)}.
+     * crosshair, crop (default true), cropMarginMm (2), fallbackMm (6), format 'jpg' | 'png', jpgQuality (90),
+     * sampleCount (0 = all, else a random sample of that many)}.
      * Returns the folder.
      */
     function components(bl, o, dir, suffix) {
@@ -340,6 +341,15 @@ var OrionSnap = (function () {
         if (items.length < 1) {
             log(holderName(bl) + ': no placements to photograph');
             return dir;
+        }
+        if (o.sampleCount && o.sampleCount > 0 && items.length > o.sampleCount) {
+            // A random sample only (cheap): shuffle, keep the first sampleCount.
+            for (var si = items.length - 1; si > 0; si--) {
+                var sj = Math.floor(Math.random() * (si + 1));
+                var tmp = items[si]; items[si] = items[sj]; items[sj] = tmp;
+            }
+            items = items.slice(0, o.sampleCount);
+            log(holderName(bl) + ': random sample of ' + items.length + ' placements');
         }
         var cur = mm(cam.getLocation());
         var cx = cur.getX(), cy = cur.getY();

@@ -224,8 +224,22 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                         ((Number) sp[1].getValue()).doubleValue());
                 sp[0] = spinner(s.getNozzleTrimX(name), -2, 2, 0.01, v -> save.run());
                 sp[1] = spinner(s.getNozzleTrimY(name), -2, 2, 0.01, v -> save.run());
+                javax.swing.JCheckBox always = new javax.swing.JCheckBox("always check the pocket");
+                always.setSelected(s.isAlwaysCheck(name));
+                always.addActionListener(e -> s.setAlwaysCheck(name, always.isSelected()));
                 OrionUi.row(p, row++, "Nozzle " + name + " (mm)", OrionUi.line(new JLabel("X"), sp[0],
-                        new JLabel("Y"), sp[1]));
+                        new JLabel("Y"), sp[1], always));
+            }
+            OrionUi.row(p, row++, "", new JLabel("<html><body style='width:560px'>Nozzle tips that need constant "
+                    + "alignment (fine tips): when one of them is on the picking nozzle, the camera check of the "
+                    + "pocket runs before every pick, whatever the Check setting of the feeder says.</body></html>"));
+            for (org.openpnp.spi.NozzleTip tip : org.openpnp.model.Configuration.get().getMachine()
+                    .getNozzleTips()) {
+                final String tipName = tip.getName();
+                javax.swing.JCheckBox cb = new javax.swing.JCheckBox("always check the pocket");
+                cb.setSelected(s.isAlwaysCheck(tipName));
+                cb.addActionListener(e -> s.setAlwaysCheck(tipName, cb.isSelected()));
+                OrionUi.row(p, row++, "Tip " + tipName, cb);
             }
             if (nozzles.isEmpty()) {
                 OrionUi.row(p, row++, "", new JLabel("The default head has no nozzles."));

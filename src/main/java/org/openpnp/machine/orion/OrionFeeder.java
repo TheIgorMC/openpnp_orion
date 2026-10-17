@@ -593,6 +593,12 @@ public class OrionFeeder extends ReferenceFeeder {
         }
         refineByVisionIfNeeded();
         lastNozzle = nozzle;
+        forceCheck = false;
+        if (nozzle != null) {
+            OrionSettings st = OrionManager.get().getSettings();
+            forceCheck = st.isAlwaysCheck(nozzle.getName())
+                    || (nozzle.getNozzleTip() != null && st.isAlwaysCheck(nozzle.getNozzleTip().getName()));
+        }
         FeedRun pre = takePrefed();
         if (moveWhileFeeding && nozzle != null) {
             feedWhileMoving(nozzle, pre);
@@ -1124,8 +1130,14 @@ public class OrionFeeder extends ReferenceFeeder {
         jogMinMm = v;
     }
 
+    /** The nozzle (or tip) that is about to pick is one that always gets the pocket check. */
+    private transient boolean forceCheck;
+
     private boolean tapeCheckWillRun() {
         boolean pocket = tapeTarget == TapeTarget.Pocket;
+        if (forceCheck) {
+            return (pocket || holeNominal != null) && Configuration.get().getMachine().isHomed();
+        }
         if (holeMode == HoleMode.Off || (!pocket && holeNominal == null)) {
             return false;
         }

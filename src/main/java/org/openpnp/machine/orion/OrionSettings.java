@@ -95,6 +95,40 @@ public class OrionSettings {
         nozzleTrimY.put(nozzle, y);
     }
 
+    /**
+     * Names of nozzles and nozzle tips that always get the camera check of the pocket before a pick (fine tips
+     * that need constant alignment), comma separated.
+     */
+    @Attribute(required = false)
+    private String alwaysCheckNames = "";
+
+    public boolean isAlwaysCheck(String name) {
+        if (name == null || alwaysCheckNames == null) {
+            return false;
+        }
+        for (String n : alwaysCheckNames.split(",")) {
+            if (n.trim().equals(name.trim()) && !n.trim().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void setAlwaysCheck(String name, boolean on) {
+        java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
+        for (String n : (alwaysCheckNames == null ? "" : alwaysCheckNames).split(",")) {
+            if (!n.trim().isEmpty()) {
+                set.add(n.trim());
+            }
+        }
+        if (on) {
+            set.add(name.trim());
+        } else {
+            set.remove(name.trim());
+        }
+        alwaysCheckNames = String.join(",", set);
+    }
+
     /** A part id that is a plain number (0..65534) is its own component id; no table needed. */
     public static Integer numericId(String partId) {
         if (partId == null) {

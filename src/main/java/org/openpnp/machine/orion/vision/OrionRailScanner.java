@@ -27,6 +27,16 @@ public class OrionRailScanner {
     public interface FiducialFinder {
         /** Look for a large fiducial near the nominal location. Return null when none is found. */
         Location find(Location nominal) throws Exception;
+
+        /** Same for a place where a fiducial is expected: may try again before giving up. */
+        default Location findExpected(Location nominal) throws Exception {
+            return find(nominal);
+        }
+
+        /** Why the last search found nothing (for the log), or "". */
+        default String lastProblem() {
+            return "";
+        }
     }
 
     /** Decides which pending target a not-yet-claimed fiducial belongs to (light / tape movement). */
@@ -157,11 +167,12 @@ public class OrionRailScanner {
         int i = 0;
         for (Target t : r.targets) {
             report("Checking " + t.name, i++, r.targets.size());
-            Location f = finder.find(t.nominal);
+            Location f = finder.findExpected(t.nominal);
             double dx = f == null ? Double.NaN : x(f) - t.nominal.getX();
             if (f == null || Math.abs(dx) > p.maxShiftMm) {
                 t.state = State.MISSING;
                 r.log.add(f == null ? t.name + ": no fiducial at X=" + fmt(t.nominal.getX())
+                        + (finder.lastProblem().isEmpty() ? "" : " (" + finder.lastProblem() + ")")
                         : String.format("%s: fiducial %.2f mm away (limit %.2f), treated as missing",
                                 t.name, dx, p.maxShiftMm));
                 continue;

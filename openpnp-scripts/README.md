@@ -38,7 +38,8 @@ on its own, on every board of the open job (or only the selected one, `ONLY_SELE
 stages of a board end up side by side. Set `NEW_BATCH` at the top of a script to change that. The folder of a board is its
 job ID, or `brd1`, `brd2` ... if the ID is long.
 
-Defaults: **before** = panorama only; **during** and **after** = panorama and close-ups. Close-ups are cropped to the
+Defaults: **before** = panorama and close-ups of a random sample of 6 placements per board (`SAMPLE_COUNT`, quick);
+**during** and **after** = panorama and all close-ups. Close-ups are cropped to the
 part's footprint (body and pads of its package) plus `CROP_MARGIN_MM` (2 mm) on every side, saved as JPEG
 (`CLOSEUP_FORMAT`, `JPG_QUALITY`); a part whose package has no footprint gets a `FALLBACK_MM` square. `crop_mm` in
 `index_<stage>.csv` tells the size of each crop. The picture scale for the crop is measured from the pictures

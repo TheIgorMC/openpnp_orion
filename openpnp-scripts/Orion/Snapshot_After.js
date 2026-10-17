@@ -29,6 +29,7 @@ var ONLY_ENABLED = true;
 var ONLY_BOARD_SIDE = true;
 var CROSSHAIR = false;
 var MONTAGE = true;          // also build overview.jpg (all panoramas) and a close-up sheet per board
+var SAMPLE_COUNT = 0;        // close-ups of a random sample of this many placements per board (0 = all)
 var CROP = true;             // crop each close-up to the part's footprint + CROP_MARGIN_MM on every side
 var CROP_MARGIN_MM = 2.0;
 var FALLBACK_MM = 6.0;       // square size when the part's package has no footprint
@@ -48,7 +49,7 @@ task(function () {
             cameraZ: CAMERA_Z, subjectZ: SUBJECT_Z, measureScale: MEASURE_SCALE},
         components: {includeFiducials: INCLUDE_FIDUCIALS, onlyEnabled: ONLY_ENABLED, onlyBoardSide: ONLY_BOARD_SIDE,
             cameraZ: CAMERA_Z, crosshair: CROSSHAIR, crop: CROP, cropMarginMm: CROP_MARGIN_MM,
-            fallbackMm: FALLBACK_MM, format: CLOSEUP_FORMAT, jpgQuality: JPG_QUALITY}
+            sampleCount: SAMPLE_COUNT, fallbackMm: FALLBACK_MM, format: CLOSEUP_FORMAT, jpgQuality: JPG_QUALITY}
     };
     OrionSnap.runAll(gui.getJobTab().getJob(), cfg);
 });
