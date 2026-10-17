@@ -28,6 +28,7 @@ var INCLUDE_FIDUCIALS = false;
 var ONLY_ENABLED = true;
 var ONLY_BOARD_SIDE = true;
 var CROSSHAIR = false;
+var MONTAGE = true;          // also build overview.jpg (all panoramas) and a close-up sheet per board
 var CROP = true;             // crop each close-up to the part's footprint + CROP_MARGIN_MM on every side
 var CROP_MARGIN_MM = 2.0;
 var FALLBACK_MM = 6.0;       // square size when the part's package has no footprint
@@ -42,7 +43,7 @@ load(scripting.getScriptsDirectory().toString() + '/Examples/JavaScript/Utility.
 
 task(function () {
     var cfg = {
-        stage: 'after', newBatch: NEW_BATCH, mode: MODE, onlySelected: ONLY_SELECTED,
+        montage: MONTAGE, stage: 'after', newBatch: NEW_BATCH, mode: MODE, onlySelected: ONLY_SELECTED,
         board: {marginMm: MARGIN_MM, extentMarginMm: EXTENT_MARGIN_MM, overlap: OVERLAP, scale: SCALE, manual: null,
             cameraZ: CAMERA_Z, subjectZ: SUBJECT_Z, measureScale: MEASURE_SCALE},
         components: {includeFiducials: INCLUDE_FIDUCIALS, onlyEnabled: ONLY_ENABLED, onlyBoardSide: ONLY_BOARD_SIDE,

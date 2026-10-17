@@ -9,6 +9,7 @@ scripts\
     Snapshot_Before.js        run from  Scripts > Orion  (after Scripts > Refresh Scripts)
     Snapshot_During.js
     Snapshot_After.js
+    Snapshot_Montage.js       rebuilds the montages of the current batch (does not move the machine)
   Events\
     Job.Finished.Orion_Snapshots.js   runs the "during" stage when a job finishes (ENABLED = true)
     Job.Starting.Orion_Snapshots.js   runs the "before" stage when a job starts   (ENABLED = false)
@@ -28,6 +29,8 @@ on its own, on every board of the open job (or only the selected one, `ONLY_SELE
         placements\
           R1_before.jpg  R1_during.jpg  R1_after.jpg ...   close-ups of every placement, cropped
           index_before.csv  index_during.csv ...
+      overview.jpg                  all panoramas of the batch: a row per board, a column per stage
+      <board id>\placements_sheet.jpg  every close-up of a board in one picture (before | during | after per part)
   current_batch.txt                                  the batch the next stages join
 ```
 
@@ -43,3 +46,10 @@ themselves, once per run.
 
 The settings (panorama scale, overlap, which placements, camera Z ...) are at the top of each script. The scripts are
 JavaScript (Nashorn) and have not been run on every setup: if one fails, the log has the line.
+
+## Montages
+
+At the end of every stage run (`MONTAGE = true`) two summary pictures are rebuilt from what the batch holds so far:
+`Batch-<n>\overview.jpg` (all board panoramas, rows = boards, columns = before / during / after) and, in each board
+folder, `placements_sheet.jpg` (one card per designator with its before / during / after close-ups side by side).
+`Snapshot_Montage.js` rebuilds them on demand without moving the machine.

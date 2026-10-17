@@ -424,6 +424,182 @@ var OrionSnap = (function () {
         return dir;
     }
 
+    // ---------------------------------------------------------------------------------------- montages
+
+    var STAGE_NAMES = ['before', 'during', 'after'];
+
+    function imageIn(dir, base) {
+        var exts = ['.png', '.jpg'];
+        for (var i = 0; i < exts.length; i++) {
+            var f = new File(dir, base + exts[i]);
+            if (f.isFile()) {
+                try {
+                    return ImageIO.read(f);
+                } catch (e) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    function fit(g, img, x, y, w, h) {
+        var sc = Math.min(w / img.getWidth(), h / img.getHeight());
+        var dw = Math.max(1, Math.round(img.getWidth() * sc)), dh = Math.max(1, Math.round(img.getHeight() * sc));
+        g.drawImage(img, x + Math.round((w - dw) / 2), y + Math.round((h - dh) / 2), dw, dh, null);
+    }
+
+    function newCanvas(w, h) {
+        var out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        var g = out.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.setColor(new Color(40, 40, 40));
+        g.fillRect(0, 0, w, h);
+        return {img: out, g: g};
+    }
+
+    function subDirs(dir) {
+        var names = dir.list();
+        var out = [];
+        for (var i = 0; names !== null && i < names.length; i++) {
+            var d = new File(dir, names[i]);
+            if (d.isDirectory()) {
+                out.push(d);
+            }
+        }
+        out.sort(function (a, b) { return String(a.getName()).localeCompare(String(b.getName())); });
+        return out;
+    }
+
+    /**
+     * overview.jpg in the batch folder: the panoramas of every board, one row per board, one column per stage
+     * (before / during / after) that exists. Returns the file or null.
+     */
+    function overview(batch, o) {
+        var cellW = (o && o.cellWidth) || 800;
+        var rows = [];
+        var used = {};
+        var boards = subDirs(batch);
+        for (var i = 0; i < boards.length; i++) {
+            var imgs = {}, any = false;
+            for (var k = 0; k < STAGE_NAMES.length; k++) {
+                var im = imageIn(boards[i], STAGE_NAMES[k]);
+                if (im !== null) {
+                    imgs[STAGE_NAMES[k]] = im;
+                    used[STAGE_NAMES[k]] = true;
+                    any = true;
+                }
+            }
+            if (any) {
+                rows.push({name: String(boards[i].getName()), imgs: imgs});
+            }
+        }
+        if (rows.length === 0) {
+            return null;
+        }
+        var cols = STAGE_NAMES.filter(function (n) { return used[n]; });
+        var heights = [], total = 50;
+        for (var r = 0; r < rows.length; r++) {
+            var hmax = 100;
+            for (var c = 0; c < cols.length; c++) {
+                var im2 = rows[r].imgs[cols[c]];
+                if (im2) {
+                    hmax = Math.max(hmax, Math.round(cellW * im2.getHeight() / im2.getWidth()));
+                }
+            }
+            heights.push(hmax);
+            total += 40 + hmax + 10;
+        }
+        var W = 10 + cols.length * (cellW + 10);
+        var cv = newCanvas(W, total);
+        var g = cv.g;
+        g.setColor(Color.WHITE);
+        g.setFont(new Font('SansSerif', Font.BOLD, 28));
+        for (var c2 = 0; c2 < cols.length; c2++) {
+            g.drawString(cols[c2].toUpperCase(), 10 + c2 * (cellW + 10), 34);
+        }
+        var y = 50;
+        for (var r2 = 0; r2 < rows.length; r2++) {
+            g.setColor(Color.WHITE);
+            g.setFont(new Font('SansSerif', Font.BOLD, 22));
+            g.drawString(rows[r2].name, 10, y + 26);
+            for (var c3 = 0; c3 < cols.length; c3++) {
+                var im3 = rows[r2].imgs[cols[c3]];
+                if (im3) {
+                    fit(g, im3, 10 + c3 * (cellW + 10), y + 40, cellW, heights[r2]);
+                }
+            }
+            y += 40 + heights[r2] + 10;
+        }
+        g.dispose();
+        var file = new File(batch, 'overview.jpg');
+        writeImage(cv.img, file, 'jpg', 0.88);
+        log('overview: ' + file.getAbsolutePath());
+        return file;
+    }
+
+    /**
+     * placements_sheet.jpg in a board folder: every close-up in one picture, one card per designator with its
+     * before / during / after thumbnails side by side. Returns the file or null.
+     */
+    function placementsSheet(boardDir, o) {
+        var pdir = new File(boardDir, 'placements');
+        var names = pdir.list();
+        if (names === null) {
+            return null;
+        }
+        var cellW = (o && o.thumbWidth) || 240, cellH = (o && o.thumbHeight) || 180;
+        var perRow = (o && o.sheetColumns) || 2;
+        var ids = {}, used = {};
+        for (var i = 0; i < names.length; i++) {
+            var m = /^(.+)_(before|during|after)\.(jpg|png)$/.exec(String(names[i]));
+            if (m) {
+                ids[m[1]] = true;
+                used[m[2]] = true;
+            }
+        }
+        var list = Object.keys(ids).sort();
+        var cols = STAGE_NAMES.filter(function (n) { return used[n]; });
+        if (list.length === 0) {
+            return null;
+        }
+        var label = 90, cardW = label + cols.length * cellW + 10, cardH = cellH + 10;
+        var W = 10 + perRow * cardW, rowsN = Math.ceil(list.length / perRow);
+        var cv = newCanvas(W, 10 + rowsN * cardH);
+        var g = cv.g;
+        for (var k = 0; k < list.length; k++) {
+            var cx = 10 + (k % perRow) * cardW, cy = 10 + Math.floor(k / perRow) * cardH;
+            g.setColor(Color.WHITE);
+            g.setFont(new Font('SansSerif', Font.BOLD, 20));
+            g.drawString(list[k], cx, cy + 24);
+            for (var c = 0; c < cols.length; c++) {
+                var im = imageIn(pdir, list[k] + '_' + cols[c]);
+                if (im !== null) {
+                    fit(g, im, cx + label + c * cellW, cy, cellW - 4, cellH - 4);
+                }
+            }
+        }
+        g.dispose();
+        var file = new File(boardDir, 'placements_sheet.jpg');
+        writeImage(cv.img, file, 'jpg', 0.88);
+        log('close-up sheet: ' + file.getAbsolutePath());
+        return file;
+    }
+
+    /** Both montages for a whole batch folder. */
+    function montage(batch, o) {
+        try {
+            overview(batch, o);
+            var boards = subDirs(batch);
+            for (var i = 0; i < boards.length; i++) {
+                placementsSheet(boards[i], o);
+            }
+        } catch (e) {
+            log('montage failed: ' + e);
+        }
+    }
+
     /**
      * The batch folder for this run:  board_snapshots/<yyyy-MM-dd>/Batch-<n>/ . A new batch (the next number of that
      * day) is started when newBatch is true or when there is none yet; otherwise the current batch is joined, so
@@ -497,12 +673,15 @@ var OrionSnap = (function () {
                 log(boardFolder(bl, i) + ' (' + holderName(bl) + ') failed: ' + e);
             }
         }
+        if (cfg.montage !== false) {
+            montage(batch, cfg.montageOptions || {});
+        }
         log(stage + ' done: ' + batch.getAbsolutePath());
         return batch;
     }
 
     return {
-        runAll: runAll, log: log, stamp: stamp, safe: safe, rootDir: rootDir, selectedOrFirst: selectedOrFirst, boardsOf: boardsOf,
+        runAll: runAll, montage: montage, batchDir: batchDir, log: log, stamp: stamp, safe: safe, rootDir: rootDir, selectedOrFirst: selectedOrFirst, boardsOf: boardsOf,
         holderName: holderName, board: board, components: components,
         File: File
     };
