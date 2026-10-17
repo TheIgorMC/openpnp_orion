@@ -1,7 +1,6 @@
 /**
- * Shared code of the Orion snapshot scripts (Orion_Board_Snapshot.js, Orion_Component_Snapshots.js,
- * Orion_Snapshots_All_Boards.js and Events/Job.Finished.Orion_Snapshots.js). Copy it into the same folder as them:
- * %USERPROFILE%\.openpnp2\scripts\   It does nothing by itself.
+ * Shared code of the Orion snapshot scripts (Snapshot_Before / During / After.js and the Job.* event scripts). It lives in
+ * %USERPROFILE%\.openpnp2\scripts\Orion\  and does nothing by itself.
  *
  * Everything here must run as a machine task (the scripts that load it take care of that).
  */
@@ -137,9 +136,9 @@ var OrionSnap = (function () {
     /**
      * One stitched picture of the board.
      * o: {marginMm, extentMarginMm, overlap, scale, manual, cameraZ, subjectZ, measureScale}
-     * dir: folder to write into (a File), file name  <board>_<time>.png  Returns the file.
+     * dir: folder to write into (a File); file  <fileBase>.png  (or <board>_<time>.png). Returns the file.
      */
-    function board(bl, o, dir) {
+    function board(bl, o, dir, fileBase) {
         var cam = camera();
         var name = 'board';
         var x0, y0, x1, y1;
@@ -242,7 +241,7 @@ var OrionSnap = (function () {
         }
         g.dispose();
         dir.mkdirs();
-        var file = new File(dir, name + '_' + stamp() + '.png');
+        var file = new File(dir, (fileBase ? fileBase : name + '_' + stamp()) + '.png');
         ImageIO.write(out, 'png', file);
         log('saved ' + file.getAbsolutePath() + ' (' + outW + ' x ' + outH + ' px, origin top-left = X '
             + x0.toFixed(2) + ' Y ' + y1.toFixed(2) + ')');
@@ -255,7 +254,7 @@ var OrionSnap = (function () {
      * One picture per placement, into dir (a File, created). o: {includeFiducials, onlyEnabled, onlyBoardSide,
      * cameraZ, crosshair}. Returns the folder.
      */
-    function components(bl, o, dir) {
+    function components(bl, o, dir, suffix) {
         var cam = camera();
         var holder = bl.getPlacementsHolder();
         var z = o.cameraZ !== null ? o.cameraZ : mm(cam.getDefaultZ()).getValue();
@@ -310,41 +309,90 @@ var OrionSnap = (function () {
                 g.dispose();
             }
             var num = ('000' + (n + 1)).slice(-3);
-            ImageIO.write(img, 'png', new File(dir, num + '_' + safe(p.id) + '.png'));
+            ImageIO.write(img, 'png', new File(dir, safe(p.id) + (suffix ? '_' + suffix : '') + '.png'));
             csv.append(num + ',' + p.id + ',' + p.part + ',' + p.x.toFixed(3) + ',' + p.y.toFixed(3) + '\n');
             log(holderName(bl) + ': ' + (n + 1) + ' of ' + order.length + ': ' + p.id);
         }
-        java.nio.file.Files.write(new File(dir, 'index.csv').toPath(),
+        java.nio.file.Files.write(new File(dir, 'index' + (suffix ? '_' + suffix : '') + '.csv').toPath(),
             csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
         return dir;
     }
 
     /**
-     * The same snapshot of every board of the job. cfg: {stage: 'before' | 'during' | 'after' | '' (goes into the folder name), mode: 'board' | 'components' | 'both', board: {...},
-     * components: {...}}. One folder per run, one sub-folder per board.
+     * The batch folder for this run:  board_snapshots/<yyyy-MM-dd>/Batch-<n>/ . A new batch (the next number of that
+     * day) is started when newBatch is true or when there is none yet; otherwise the current batch is joined, so
+     * the before / during / after pictures of the same boards end up together. The current batch is remembered in
+     * board_snapshots/current_batch.txt.
+     */
+    function batchDir(newBatch) {
+        var root = rootDir();
+        root.mkdirs();
+        var state = new File(root, 'current_batch.txt');
+        if (!newBatch && state.exists()) {
+            var path = String(new java.lang.String(java.nio.file.Files.readAllBytes(state.toPath()),
+                java.nio.charset.StandardCharsets.UTF_8)).replace(/\s+$/, '');
+            var d = new File(path);
+            if (d.isDirectory()) {
+                return d;
+            }
+        }
+        var day = new File(root, new java.text.SimpleDateFormat('yyyy-MM-dd').format(new java.util.Date()));
+        day.mkdirs();
+        var max = 0;
+        var names = day.list();
+        for (var i = 0; names !== null && i < names.length; i++) {
+            var m = /^Batch-(\d+)$/.exec(String(names[i]));
+            if (m) {
+                max = Math.max(max, parseInt(m[1], 10));
+            }
+        }
+        var dir = new File(day, 'Batch-' + (max + 1));
+        dir.mkdirs();
+        java.nio.file.Files.write(state.toPath(), String(dir.getAbsolutePath()).getBytes(
+            java.nio.charset.StandardCharsets.UTF_8));
+        return dir;
+    }
+
+    /** Folder name of a board: its job ID if that is short, otherwise brd<n>. */
+    function boardFolder(bl, i) {
+        var id = '';
+        try {
+            id = String(bl.getId());
+        } catch (e) {
+            id = '';
+        }
+        return (id && id !== 'null' && id.length <= 24) ? safe(id) : 'brd' + (i + 1);
+    }
+
+    /**
+     * Pictures of the boards of the job for one stage.
+     * cfg: {stage: 'before' | 'during' | 'after', newBatch: true | false, mode: 'board' | 'components' | 'both',
+     *       onlySelected: false, board: {...}, components: {...}}
+     * Layout:  board_snapshots/<date>/Batch-<n>/<board id>/<stage>.png          (one panorama per stage)
+     *                                                       placements/<designator>_<stage>.png  (close-ups)
      */
     function runAll(theJob, cfg) {
-        var stage = cfg.stage ? String(cfg.stage) : '';
-        var parent = new File(rootDir(), 'Batch-' + stamp() + (stage ? '-' + safe(stage) : ''));
-        var boards = boardsOf(theJob);
-        log('batch' + (stage ? ' (' + stage + ')' : '') + ': ' + boards.length + ' boards, ' + cfg.mode + ', into ' + parent.getAbsolutePath());
+        var stage = safe(cfg.stage || 'snapshot');
+        var batch = batchDir(cfg.newBatch === true);
+        var boards = cfg.onlySelected ? [selectedOrFirst()] : boardsOf(theJob);
+        log(stage + ': ' + boards.length + ' board(s), ' + cfg.mode + ', into ' + batch.getAbsolutePath());
         for (var i = 0; i < boards.length; i++) {
             var bl = boards[i];
-            var sub = new File(parent, 'brd' + (i + 1));
+            var dir = new File(batch, boardFolder(bl, i));
             try {
                 if (cfg.mode === 'board' || cfg.mode === 'both') {
-                    board(bl, cfg.board, sub);
+                    board(bl, cfg.board, dir, stage);
                 }
                 if (cfg.mode === 'components' || cfg.mode === 'both') {
-                    components(bl, cfg.components, new File(sub, 'components'));
+                    components(bl, cfg.components, new File(dir, 'placements'), stage);
                 }
             } catch (e) {
                 // One board failing must not stop the others (or the end of a job).
-                log('brd' + (i + 1) + ' (' + holderName(bl) + ') failed: ' + e);
+                log(boardFolder(bl, i) + ' (' + holderName(bl) + ') failed: ' + e);
             }
         }
-        log('all boards done: ' + parent.getAbsolutePath());
-        return parent;
+        log(stage + ' done: ' + batch.getAbsolutePath());
+        return batch;
     }
 
     return {
