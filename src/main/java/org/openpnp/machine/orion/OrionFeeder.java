@@ -1232,6 +1232,21 @@ public class OrionFeeder extends ReferenceFeeder {
         currentSlotXMm = mm;
     }
 
+    /**
+     * The pick location was edited: its X becomes the reference of the unit's slot position. Writes it to the unit
+     * and remembers it as the position the pick location was taught at, so no separate "Write to unit" /
+     * "Teach" is needed.
+     */
+    public void adoptPickXAsSlotReference() throws Exception {
+        double x = location.convertToUnits(LengthUnit.Millimeters).getX();
+        if (x < 0 || x > 6500) {
+            throw new Exception(String.format("Pick X %.1f mm cannot be stored as the unit's slot position "
+                    + "(0 .. 6500 mm).", x));
+        }
+        writeSlotPosition(Math.round(x * 10.0) / 10.0);
+        taughtSlotXMm = currentSlotXMm;
+    }
+
     /** Remember the unit's current slot X as the position the pick location was taught at. */
     public void teachSlotPosition() throws Exception {
         double x = readSlotPosition();

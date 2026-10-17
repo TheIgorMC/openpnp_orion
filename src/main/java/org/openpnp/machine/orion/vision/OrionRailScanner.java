@@ -61,6 +61,8 @@ public class OrionRailScanner {
         public double scanStepMm = 6.0;
         /** Free-area margin around known feeders; fiducials closer than this belong to a known one. */
         public double exclusionMm = 5.0;
+        /** Distance between the three fiducials of a feeder; 0 = unknown. With it only the middle one is kept. */
+        public double fiducialSpacingMm = 0;
         /** Shifts below this are noise and not saved. */
         public double minSaveMm = 0.02;
         /** Shifts above this are not "the same feeder, slightly moved". */
@@ -202,6 +204,7 @@ public class OrionRailScanner {
         // ---- phase 2: one sweep of the free stretches of the rail
         r.rescanRan = true;
         List<Location> candidates = sweep(known, r);
+        candidates = keepMiddleFiducials(candidates, r);
 
         // ---- phase 3: associate
         List<Target> pending = new ArrayList<>();
@@ -301,14 +304,46 @@ public class OrionRailScanner {
                 if (f != null && !nearAny(x(f), known) && !nearAny(x(f), xs(found), 2.0)) {
                     found.add(f);
                     r.log.add(String.format("fiducial found at X=%.2f", x(f)));
-                    // Skip the rest of this feeder's footprint.
-                    xs = Math.max(xs + p.scanStepMm, x(f) + p.exclusionMm);
+                    // Skip the rest of this feeder's footprint (only half a fiducial spacing when that is known,
+                    // so the middle fiducial next to a side one is still seen).
+                    double skip = p.fiducialSpacingMm > 0 ? p.fiducialSpacingMm * 0.5 : p.exclusionMm;
+                    xs = Math.max(xs + p.scanStepMm, x(f) + skip);
                 } else {
                     xs += p.scanStepMm;
                 }
             }
         }
         return found;
+    }
+
+    /**
+     * Each feeder has three fiducials in a row. When their spacing is known, a run of three candidates spaced by it
+     * is one feeder and only the middle one counts; the side ones are dropped.
+     */
+    private List<Location> keepMiddleFiducials(List<Location> in, Result r) {
+        double s = p.fiducialSpacingMm;
+        if (s <= 0 || in.size() < 3) {
+            return in;
+        }
+        List<Location> sorted = new ArrayList<>(in);
+        sorted.sort((a, b) -> Double.compare(x(a), x(b)));
+        double tol = Math.max(1.0, s * 0.25);
+        List<Location> out = new ArrayList<>();
+        int i = 0;
+        while (i < sorted.size()) {
+            if (i + 2 < sorted.size()
+                    && Math.abs(x(sorted.get(i + 1)) - x(sorted.get(i)) - s) <= tol
+                    && Math.abs(x(sorted.get(i + 2)) - x(sorted.get(i + 1)) - s) <= tol) {
+                out.add(sorted.get(i + 1));
+                r.log.add(String.format("fiducials at X=%.2f / %.2f / %.2f are one feeder: using the middle one",
+                        x(sorted.get(i)), x(sorted.get(i + 1)), x(sorted.get(i + 2))));
+                i += 3;
+            } else {
+                out.add(sorted.get(i));
+                i++;
+            }
+        }
+        return out;
     }
 
     private static List<Double> xs(List<Location> l) {

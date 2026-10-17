@@ -29,6 +29,10 @@ public class OrionRailSettings {
     @Attribute(required = false)
     private double exclusionMm = 5.0;
 
+    /** Distance between the three fiducials of a feeder (0 = unknown); only the middle one is wanted. */
+    @Attribute(required = false)
+    private double fiducialSpacingMm = 0;
+
     @Attribute(required = false)
     private double minSaveMm = 0.02;
 
@@ -137,6 +141,14 @@ public class OrionRailSettings {
 
     public void setScanStepMm(double v) {
         scanStepMm = v;
+    }
+
+    public double getFiducialSpacingMm() {
+        return fiducialSpacingMm;
+    }
+
+    public void setFiducialSpacingMm(double v) {
+        fiducialSpacingMm = v;
     }
 
     public double getExclusionMm() {

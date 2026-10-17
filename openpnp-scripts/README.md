@@ -10,6 +10,7 @@ scripts\
     Snapshot_During.js
     Snapshot_After.js
     Snapshot_Montage.js       rebuilds the montages of the current batch (does not move the machine)
+    Z_Touch_Check.js          by-hand Z touch-off of a nozzle tip against a fixed reference, logged to z_touch_log.csv
   Events\
     Job.Finished.Orion_Snapshots.js   runs the "during" stage when a job finishes (ENABLED = true)
     Job.Starting.Orion_Snapshots.js   runs the "before" stage when a job starts   (ENABLED = false)

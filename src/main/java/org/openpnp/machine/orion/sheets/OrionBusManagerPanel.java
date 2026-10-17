@@ -555,6 +555,8 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             row2.add(dspin(rs.getScanStepMm(), 1, 50, 0.5, rs::setScanStepMm));
             row2.add(new JLabel("exclusion"));
             row2.add(dspin(rs.getExclusionMm(), 1, 50, 0.5, rs::setExclusionMm));
+            row2.add(new JLabel("fiducial spacing (0 = off)"));
+            row2.add(dspin(rs.getFiducialSpacingMm(), 0, 100, 0.5, rs::setFiducialSpacingMm));
             row2.add(new JLabel("save shifts >"));
             row2.add(dspin(rs.getMinSaveMm(), 0, 5, 0.01, rs::setMinSaveMm));
             row2.add(new JLabel("reject >"));

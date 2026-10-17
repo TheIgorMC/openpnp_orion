@@ -478,7 +478,19 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
 
     @Override
     protected void saveToModel() {
+        double oldX = feeder.getLocation().convertToUnits(org.openpnp.model.LengthUnit.Millimeters).getX();
         super.saveToModel();
+        double newX = feeder.getLocation().convertToUnits(org.openpnp.model.LengthUnit.Millimeters).getX();
+        if (Math.abs(newX - oldX) > 0.001) {
+            // The pick X was edited: it becomes the slot reference of the unit (written to it, and taught).
+            OrionUi.run("Pick X is the slot reference", () -> {
+                feeder.adoptPickXAsSlotReference();
+                return null;
+            }, v -> {
+                slotTf.setText(String.format("%.1f", feeder.getCurrentSlotXMm()));
+                slotLabel.setText("slot X set from the pick location");
+            });
+        }
         // Live update: if the unit is reachable, push the new settings right away.
         if (feeder.getSerial() != null && OrionManager.get().isConnected()) {
             OrionUi.run("Push settings", () -> {

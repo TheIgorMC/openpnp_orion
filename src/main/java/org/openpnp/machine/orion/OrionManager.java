@@ -701,6 +701,7 @@ public class OrionManager {
         p.fiducialZ = rs.getFiducialZ();
         p.scanStepMm = rs.getScanStepMm();
         p.exclusionMm = rs.getExclusionMm();
+        p.fiducialSpacingMm = rs.getFiducialSpacingMm();
         p.minSaveMm = rs.getMinSaveMm();
         p.maxShiftMm = rs.getMaxShiftMm();
         p.autoRescan = rs.isAutoRescan();
