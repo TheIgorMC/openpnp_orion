@@ -51,6 +51,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         JTabbedPane top = new JTabbedPane();
         top.addTab("Connection", buildConnectionPanel());
         top.addTab("Feeder identification (fiber / tape)", buildIdentifyPanel());
+        top.addTab("Nozzle pick trim", buildNozzleTrimPanel());
         add(top, BorderLayout.NORTH);
         add(railTabs, BorderLayout.CENTER);
         JPanel south = new JPanel(new BorderLayout());
@@ -201,6 +202,37 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                 spinner(s.getHoleDiameterMm(), 0.5, 5, 0.1, s::setHoleDiameterMm),
                 new JLabel("search radius (mm)"),
                 spinner(s.getHoleSearchMm(), 2, 20, 0.5, s::setHoleSearchMm)));
+        return p;
+    }
+
+    /** One X / Y pick trim per nozzle, added to the pick location of every Orion feeder. */
+    private JPanel buildNozzleTrimPanel() {
+        OrionSettings s = mgr.getSettings();
+        JPanel p = OrionUi.grid();
+        p.setBorder(BorderFactory.createTitledBorder("Pick trim per nozzle"));
+        int row = 0;
+        OrionUi.row(p, row++, "", new JLabel("<html><body style='width:560px'>Added to the pick location of every "
+                + "Orion feeder when that nozzle picks (not to the camera's look position). If N2 lands 0.05 mm "
+                + "left of where N1 lands on the same pocket, give N2 +0.05 in X.</body></html>"));
+        try {
+            java.util.List<org.openpnp.spi.Nozzle> nozzles = org.openpnp.model.Configuration.get().getMachine()
+                    .getDefaultHead().getNozzles();
+            for (org.openpnp.spi.Nozzle nz : nozzles) {
+                final String name = nz.getName();
+                final javax.swing.JSpinner[] sp = new javax.swing.JSpinner[2];
+                Runnable save = () -> s.setNozzleTrim(name, ((Number) sp[0].getValue()).doubleValue(),
+                        ((Number) sp[1].getValue()).doubleValue());
+                sp[0] = spinner(s.getNozzleTrimX(name), -2, 2, 0.01, v -> save.run());
+                sp[1] = spinner(s.getNozzleTrimY(name), -2, 2, 0.01, v -> save.run());
+                OrionUi.row(p, row++, "Nozzle " + name + " (mm)", OrionUi.line(new JLabel("X"), sp[0],
+                        new JLabel("Y"), sp[1]));
+            }
+            if (nozzles.isEmpty()) {
+                OrionUi.row(p, row++, "", new JLabel("The default head has no nozzles."));
+            }
+        } catch (Exception e) {
+            OrionUi.row(p, row++, "", new JLabel("Cannot list the nozzles: " + e));
+        }
         return p;
     }
 
