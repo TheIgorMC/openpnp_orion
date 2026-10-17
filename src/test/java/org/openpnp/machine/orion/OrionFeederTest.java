@@ -76,6 +76,30 @@ public class OrionFeederTest {
     }
 
     @Test
+    void lostFeedReplyDoesNotFeedTwice() throws Exception {
+        OrionFeeder f = bound(0);
+        f.setPitchMm(4);
+        f.feedOnce(); // pitch pushed, baseline
+        SimulatedOrionTransport.SimFeeder s = sim().getFeeders().get(0);
+        int before = s.feeds;
+        s.loseNextMoveReply = true;
+        f.feedOnce(); // the unit moved, only the reply was lost
+        assertEquals(before + 1, s.feeds, "must not be sent a second time");
+    }
+
+    @Test
+    void feedThatWasNeverReceivedIsSentOnceMore() throws Exception {
+        OrionFeeder f = bound(0);
+        f.setPitchMm(4);
+        f.feedOnce();
+        SimulatedOrionTransport.SimFeeder s = sim().getFeeders().get(0);
+        int before = s.feeds;
+        s.ignoreNextMove = true;
+        f.feedOnce();
+        assertEquals(before + 1, s.feeds);
+    }
+
+    @Test
     void feederFollowsUnitAcrossRebootAndRailLoss() throws Exception {
         OrionFeeder f = bound(0);
         f.feedOnce();

@@ -98,9 +98,15 @@ public class OrionBus {
      */
     public synchronized OrionFrame request(int address, int cmd, byte[] payload, int timeoutMs)
             throws OrionException {
+        return request(address, cmd, payload, timeoutMs, retries + 1);
+    }
+
+    /** Same with an explicit number of attempts (1 = send once, never repeat). */
+    private synchronized OrionFrame request(int address, int cmd, byte[] payload, int timeoutMs, int attempts)
+            throws OrionException {
         OrionFrame req = new OrionFrame(address, cmd, payload);
         OrionException last = null;
-        for (int attempt = 0; attempt <= retries; attempt++) {
+        for (int attempt = 0; attempt < Math.max(1, attempts); attempt++) {
             List<OrionFrame> replies = exchange(req, timeoutMs, 0);
             OrionFrame mine = null;
             for (OrionFrame r : replies) {
@@ -473,6 +479,65 @@ public class OrionBus {
         return expect(address, cmd, payload, MOVE_TIMEOUT_MS, OrionCommand.ACK);
     }
 
+    /** A feed moves the tape, so it must never be sent blindly twice when its reply is missing. */
+    private static final int MIN_MOVE_COUNTS = 20;
+
+    /**
+     * Send a tape move once. If the reply never arrives, ask the unit where its sprocket is: when it moved, the
+     * reply was just lost and the move counts as done; when it is alive but did not move, the command is sent one
+     * more time; when it does not answer at all, the timeout is reported (no further blind repeats).
+     */
+    private synchronized void moveVerified(int address, int cmd) throws OrionException {
+        int before = -1;
+        try {
+            before = getStatus(address).angleRaw;
+        } catch (OrionException e) {
+            // no baseline: the check below can then only tell "alive" from "silent"
+        }
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                OrionFrame f = request(address, cmd, new byte[0], MOVE_TIMEOUT_MS, 1);
+                if (f.command != OrionCommand.ACK) {
+                    throw new OrionException(OrionException.Kind.UNEXPECTED_REPLY, "Expected ACK");
+                }
+                return;
+            } catch (OrionException e) {
+                if (e.kind != OrionException.Kind.TIMEOUT) {
+                    throw e;
+                }
+                OrionStatus st = null;
+                for (int i = 0; i < 4 && st == null; i++) {
+                    try {
+                        st = getStatus(address);
+                    } catch (OrionException ignore) {
+                        try {
+                            Thread.sleep(500);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            throw e;
+                        }
+                    }
+                }
+                if (st == null) {
+                    throw e; // silent: really gone
+                }
+                int delta = before < 0 ? 0 : ((st.angleRaw - before + 6144) % 4096) - 2048;
+                if (Math.abs(delta) >= MIN_MOVE_COUNTS) {
+                    log(OrionBusListener.Direction.INFO, String.format(
+                            "address %d: no reply to %s, but the sprocket moved by %d counts: counted as done",
+                            address, OrionCommand.name(cmd), delta));
+                    return;
+                }
+                log(OrionBusListener.Direction.INFO, String.format(
+                        "address %d: no reply to %s and no movement, sending it once more", address,
+                        OrionCommand.name(cmd)));
+            }
+        }
+        throw new OrionException(OrionException.Kind.TIMEOUT, String.format(
+                "No reply from rail %d address %d to %s (it answers other commands but does not move)", rail,
+                address, OrionCommand.name(cmd)));
+    }
+
     private static byte[] be16(int v) {
         return new byte[] {(byte) (v >> 8), (byte) v};
     }
@@ -482,11 +547,11 @@ public class OrionBus {
     }
 
     public void feedNext(int address) throws OrionException {
-        ackSlow(address, OrionCommand.FEED_NEXT);
+        moveVerified(address, OrionCommand.FEED_NEXT);
     }
 
     public void feedBack(int address) throws OrionException {
-        ackSlow(address, OrionCommand.FEED_BACK);
+        moveVerified(address, OrionCommand.FEED_BACK);
     }
 
     /** Jog in 0.1 mm units, negative = backwards. Returns the new raw angle. */

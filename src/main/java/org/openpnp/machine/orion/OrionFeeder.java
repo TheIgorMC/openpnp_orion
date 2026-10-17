@@ -1024,9 +1024,12 @@ public class OrionFeeder extends ReferenceFeeder {
                 dy = 0;
             }
         }
-        if (Math.hypot(dx, dy) > maxHoleCorrectionMm) {
-            throw new Exception(String.format("Feeder '%s': pocket is %.2f mm off, more than the %.2f mm limit.",
-                    getName(), Math.hypot(dx, dy), maxHoleCorrectionMm));
+        // Never accept more than under half a pocket pitch: a shift near a whole pitch is the neighbouring pocket.
+        double limit = pitchMm > 0 ? Math.min(maxHoleCorrectionMm, 0.45 * pitchMm) : maxHoleCorrectionMm;
+        if (Math.hypot(dx, dy) > limit) {
+            throw new Exception(String.format("Feeder '%s': pocket is %.2f mm off, more than the %.2f mm limit "
+                    + "(at most 45%% of the %d mm pitch, so a neighbouring pocket is not taken for this one).",
+                    getName(), Math.hypot(dx, dy), limit, pitchMm));
         }
         Logger.debug("Orion feeder {}: pocket {}; shift {} / {}", getName(), lastPocketReport, dx, dy);
         return new double[] {dx, dy};

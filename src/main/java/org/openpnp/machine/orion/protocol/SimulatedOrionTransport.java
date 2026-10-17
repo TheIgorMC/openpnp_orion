@@ -25,6 +25,10 @@ public class SimulatedOrionTransport implements OrionTransport {
         public int posRaw = 0xFFFF;
         public int lastAddr = 0;
         public int feeds = 0;
+        /** The next FEED executes but its reply is lost. */
+        public boolean loseNextMoveReply = false;
+        /** The next FEED is not received at all. */
+        public boolean ignoreNextMove = false;
         public int peels = 0;
         public OrionError failNextMove = OrionError.NONE;
         public boolean hasSerial = true;
@@ -122,7 +126,19 @@ public class SimulatedOrionTransport implements OrionTransport {
             return out;
         }
         for (SimFeeder f : targets) {
+            boolean move = req.command == OrionCommand.FEED_NEXT || req.command == OrionCommand.FEED_BACK;
+            if (move && f.ignoreNextMove) {
+                f.ignoreNextMove = false;
+                continue;
+            }
+            boolean lose = move && f.loseNextMoveReply;
+            if (lose) {
+                f.loseNextMoveReply = false;
+            }
             OrionFrame r = handle(f, req);
+            if (lose) {
+                continue; // executed, but the reply never arrives
+            }
             if (r != null) {
                 out.add(r);
             }
