@@ -13,7 +13,7 @@
 
 // ---- settings -------------------------------------------------------------------------------------------------
 var NEW_BATCH = true;   // true: start a new Batch-<n> folder (today's next number); false: add to the current batch
-var MODE = 'both';        // 'board' (panorama), 'components' (close-ups of each placement) or 'both'
+var MODE = 'board';       // 'board' (panorama), 'components' (close-ups of each placement) or 'both'
 var ONLY_SELECTED = false; // true: only the board selected in the Job tab; false: every board of the job
 
 // panorama
@@ -28,6 +28,11 @@ var INCLUDE_FIDUCIALS = false;
 var ONLY_ENABLED = true;
 var ONLY_BOARD_SIDE = true;
 var CROSSHAIR = false;
+var CROP = true;             // crop each close-up to the part's footprint + CROP_MARGIN_MM on every side
+var CROP_MARGIN_MM = 2.0;
+var FALLBACK_MM = 6.0;       // square size when the part's package has no footprint
+var CLOSEUP_FORMAT = 'jpg';  // 'jpg' (small) or 'png' (lossless)
+var JPG_QUALITY = 90;
 // both
 var CAMERA_Z = null;        // null = the camera's default Z; or a number (mm)
 // ----------------------------------------------------------------------------------------------------------------
@@ -41,7 +46,8 @@ task(function () {
         board: {marginMm: MARGIN_MM, extentMarginMm: EXTENT_MARGIN_MM, overlap: OVERLAP, scale: SCALE, manual: null,
             cameraZ: CAMERA_Z, subjectZ: SUBJECT_Z, measureScale: MEASURE_SCALE},
         components: {includeFiducials: INCLUDE_FIDUCIALS, onlyEnabled: ONLY_ENABLED, onlyBoardSide: ONLY_BOARD_SIDE,
-            cameraZ: CAMERA_Z, crosshair: CROSSHAIR}
+            cameraZ: CAMERA_Z, crosshair: CROSSHAIR, crop: CROP, cropMarginMm: CROP_MARGIN_MM,
+            fallbackMm: FALLBACK_MM, format: CLOSEUP_FORMAT, jpgQuality: JPG_QUALITY}
     };
     OrionSnap.runAll(gui.getJobTab().getJob(), cfg);
 });

@@ -24,6 +24,11 @@ var OrionSnap = (function () {
     var Rect = Java.type('org.opencv.core.Rect');
     var Imgproc = Java.type('org.opencv.imgproc.Imgproc');
     var Logger = Java.type('org.pmw.tinylog.Logger');
+    var ImageWriteParam = Java.type('javax.imageio.ImageWriteParam');
+    var IIOImage = Java.type('javax.imageio.IIOImage');
+
+    // The last measured picture scale {z, x, y} (mm per pixel), reused for the close-up crops of the same run.
+    var cachedScale = null;
 
     function log(msg) {
         Logger.info('Snapshot: ' + msg);
@@ -131,6 +136,60 @@ var OrionSnap = (function () {
         return {x: DX / px, y: DY / py};
     }
 
+    /** Write an image as png, or as jpg with the given quality (0..1). */
+    function writeImage(img, file, format, quality) {
+        if (format === 'jpg') {
+            var writer = ImageIO.getImageWritersByFormatName('jpg').next();
+            var param = writer.getDefaultWriteParam();
+            param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+            param.setCompressionQuality(quality);
+            var ios = ImageIO.createImageOutputStream(file);
+            try {
+                writer.setOutput(ios);
+                writer.write(null, new IIOImage(img, null, null), param);
+            } finally {
+                ios.close();
+                writer.dispose();
+            }
+        } else {
+            ImageIO.write(img, 'png', file);
+        }
+    }
+
+    /**
+     * Half the size {hx, hy} (mm, along machine X and Y) of the footprint of a placement's package (body and pads)
+     * around the placement position, for its final rotation in degrees. null if the package has no footprint size.
+     */
+    function halfExtentsMm(pl, rotationDeg) {
+        try {
+            var part = pl.getPart();
+            if (part === null || part.getPackage() === null || part.getPackage().getFootprint() === null) {
+                return null;
+            }
+            var fp = part.getPackage().getFootprint();
+            var b = fp.getShape().getBounds2D();
+            if (b.getWidth() <= 0 || b.getHeight() <= 0) {
+                return null;
+            }
+            var u = fp.getUnits();
+            function toMm(v) {
+                return new Length(v, u).convertToUnits(LengthUnit.Millimeters).getValue();
+            }
+            var xs = [toMm(b.getMinX()), toMm(b.getMaxX())], ys = [toMm(b.getMinY()), toMm(b.getMaxY())];
+            var th = rotationDeg * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+            var hx = 0, hy = 0;
+            for (var i = 0; i < 2; i++) {
+                for (var j = 0; j < 2; j++) {
+                    hx = Math.max(hx, Math.abs(xs[i] * c - ys[j] * sn));
+                    hy = Math.max(hy, Math.abs(xs[i] * sn + ys[j] * c));
+                }
+            }
+            return {hx: hx, hy: hy};
+        } catch (e) {
+            return null;
+        }
+    }
+
     // ---------------------------------------------------------------------------------------- whole board
 
     /**
@@ -206,6 +265,7 @@ var OrionSnap = (function () {
                 log(name + ': could not measure the scale, using the calibration ' + uppX.toFixed(4) + ' mm/px');
             }
         }
+        cachedScale = {z: z, x: uppX, y: uppY};
         var fovX = valid.w * uppX, fovY = valid.h * uppY;
         var cols = Math.max(1, Math.ceil((x1 - x0) / (fovX * (1 - o.overlap))));
         var rows = Math.max(1, Math.ceil((y1 - y0) / (fovY * (1 - o.overlap))));
@@ -251,8 +311,10 @@ var OrionSnap = (function () {
     // ---------------------------------------------------------------------------------------- per component
 
     /**
-     * One picture per placement, into dir (a File, created). o: {includeFiducials, onlyEnabled, onlyBoardSide,
-     * cameraZ, crosshair}. Returns the folder.
+     * One close-up per placement, into dir (a File, created), cropped to the part's footprint + cropMarginMm each side
+     * (fallbackMm square if the package has no footprint). o: {includeFiducials, onlyEnabled, onlyBoardSide, cameraZ,
+     * crosshair, crop (default true), cropMarginMm (2), fallbackMm (6), format 'jpg' | 'png', jpgQuality (90)}.
+     * Returns the folder.
      */
     function components(bl, o, dir, suffix) {
         var cam = camera();
@@ -271,7 +333,8 @@ var OrionSnap = (function () {
                 id: String(pl.getId()),
                 part: pl.getPart() === null ? '' : String(pl.getPart().getId()),
                 x: loc.getX(),
-                y: loc.getY()
+                y: loc.getY(),
+                ext: halfExtentsMm(pl, loc.getRotation())
             });
         }
         if (items.length < 1) {
@@ -292,25 +355,68 @@ var OrionSnap = (function () {
             cx = it.x; cy = it.y;
         }
         dir.mkdirs();
-        var csv = new java.lang.StringBuilder('number,designator,part,x_mm,y_mm\n');
+        var csv = new java.lang.StringBuilder('number,designator,part,x_mm,y_mm,crop_mm\n');
+        var fmt = o.format === 'jpg' ? 'jpg' : 'png';
+        var ext = fmt === 'jpg' ? '.jpg' : '.png';
+        var quality = (o.jpgQuality || 90) / 100;
+        var cropMargin = o.cropMarginMm === undefined ? 2.0 : o.cropMarginMm;
+        var fallbackMm = o.fallbackMm || 6.0;
+        var scale = (o.crop !== false) ? null : undefined; // undefined: no cropping at all
         log(holderName(bl) + ': ' + order.length + ' pictures into ' + dir.getAbsolutePath());
         for (var n = 0; n < order.length; n++) {
             var p = order[n];
             MovableUtils.moveToLocationAtSafeZ(cam, new Location(LengthUnit.Millimeters, p.x, p.y, z, rot));
             var img = cam.lightSettleAndCapture();
+            var cropNote = 'full';
+            if (scale !== undefined) {
+                if (scale === null) {
+                    // First picture of the run: the real mm per pixel (cached from a panorama of the same Z).
+                    if (cachedScale !== null && Math.abs(cachedScale.z - z) < 1e-6) {
+                        scale = cachedScale;
+                    } else {
+                        var vr = usableRect(img);
+                        var ms = measureScale(cam, p.x, p.y, z, img, vr);
+                        if (ms !== null) {
+                            scale = {z: z, x: ms.x, y: ms.y};
+                            log('close-ups: measured scale ' + ms.x.toFixed(4) + ' x ' + ms.y.toFixed(4) + ' mm/px');
+                        } else {
+                            var cu = mm(cam.getUnitsPerPixel(bl.getLocation().getLengthZ()));
+                            scale = {z: z, x: cu.getX(), y: cu.getY()};
+                            log('close-ups: could not measure the scale, using the calibration');
+                        }
+                        cachedScale = scale;
+                        // The measurement moved the camera: go back to the placement and take the picture again.
+                        MovableUtils.moveToLocationAtSafeZ(cam, new Location(LengthUnit.Millimeters, p.x, p.y, z,
+                            rot));
+                        img = cam.lightSettleAndCapture();
+                    }
+                }
+                var hxMm = p.ext ? p.ext.hx + cropMargin : fallbackMm / 2;
+                var hyMm = p.ext ? p.ext.hy + cropMargin : fallbackMm / 2;
+                var halfW = Math.round(hxMm / scale.x), halfH = Math.round(hyMm / scale.y);
+                var vrc = usableRect(img);
+                var ccx = img.getWidth() >> 1, ccy = img.getHeight() >> 1;
+                var x0p = Math.max(vrc.x, ccx - halfW), x1p = Math.min(vrc.x + vrc.w, ccx + halfW);
+                var y0p = Math.max(vrc.y, ccy - halfH), y1p = Math.min(vrc.y + vrc.h, ccy + halfH);
+                if (x1p - x0p > 8 && y1p - y0p > 8) {
+                    img = img.getSubimage(x0p, y0p, x1p - x0p, y1p - y0p);
+                    cropNote = ((x1p - x0p) * scale.x).toFixed(1) + 'x' + ((y1p - y0p) * scale.y).toFixed(1);
+                }
+            }
             if (o.crosshair) {
                 var g = img.createGraphics();
                 var w = img.getWidth(), h = img.getHeight();
                 g.setColor(Color.RED);
                 g.drawLine(w / 2 - 25, h / 2, w / 2 + 25, h / 2);
                 g.drawLine(w / 2, h / 2 - 25, w / 2, h / 2 + 25);
-                g.setFont(new Font('SansSerif', Font.BOLD, 28));
-                g.drawString(p.id + (p.part ? '  ' + p.part : ''), 14, 36);
+                g.setFont(new Font('SansSerif', Font.BOLD, 20));
+                g.drawString(p.id + (p.part ? '  ' + p.part : ''), 8, 24);
                 g.dispose();
             }
             var num = ('000' + (n + 1)).slice(-3);
-            ImageIO.write(img, 'png', new File(dir, safe(p.id) + (suffix ? '_' + suffix : '') + '.png'));
-            csv.append(num + ',' + p.id + ',' + p.part + ',' + p.x.toFixed(3) + ',' + p.y.toFixed(3) + '\n');
+            writeImage(img, new File(dir, safe(p.id) + (suffix ? '_' + suffix : '') + ext), fmt, quality);
+            csv.append(num + ',' + p.id + ',' + p.part + ',' + p.x.toFixed(3) + ',' + p.y.toFixed(3) + ',' + cropNote
+                + '\n');
             log(holderName(bl) + ': ' + (n + 1) + ' of ' + order.length + ': ' + p.id);
         }
         java.nio.file.Files.write(new File(dir, 'index' + (suffix ? '_' + suffix : '') + '.csv').toPath(),
