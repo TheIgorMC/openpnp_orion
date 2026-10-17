@@ -239,7 +239,8 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                 javax.swing.JCheckBox cb = new javax.swing.JCheckBox("always check the pocket");
                 cb.setSelected(s.isAlwaysCheck(tipName));
                 cb.addActionListener(e -> s.setAlwaysCheck(tipName, cb.isSelected()));
-                OrionUi.row(p, row++, "Tip " + tipName, cb);
+                OrionUi.row(p, row++, "Tip " + tipName, OrionUi.line(cb, new JLabel("pick Z trim (mm)"),
+                        spinner(s.getTipTrimZ(tipName), -3, 3, 0.01, v -> s.setTipTrimZ(tipName, v))));
             }
             if (nozzles.isEmpty()) {
                 OrionUi.row(p, row++, "", new JLabel("The default head has no nozzles."));

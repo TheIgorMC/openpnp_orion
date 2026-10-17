@@ -80,6 +80,19 @@ public class OrionSettings {
     @ElementMap(required = false, entry = "trim-y", key = "nozzle", attribute = true, value = "mm")
     private java.util.Map<String, Double> nozzleTrimY = new java.util.HashMap<>();
 
+    /** Pick Z trim per nozzle tip name (mm), from the Z touch check: how much higher it touches than the reference. */
+    @ElementMap(required = false, entry = "tip-trim-z", key = "tip", attribute = true, value = "mm")
+    private java.util.Map<String, Double> tipTrimZ = new java.util.HashMap<>();
+
+    public double getTipTrimZ(String tip) {
+        Double v = tip == null ? null : tipTrimZ.get(tip);
+        return v == null ? 0 : v;
+    }
+
+    public void setTipTrimZ(String tip, double mm) {
+        tipTrimZ.put(tip, mm);
+    }
+
     public double getNozzleTrimX(String nozzle) {
         Double v = nozzle == null ? null : nozzleTrimX.get(nozzle);
         return v == null ? 0 : v;

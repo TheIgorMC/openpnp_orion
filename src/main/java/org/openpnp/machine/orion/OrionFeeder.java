@@ -765,8 +765,9 @@ public class OrionFeeder extends ReferenceFeeder {
             return new Location(LengthUnit.Millimeters);
         }
         OrionSettings st = OrionManager.get().getSettings();
+        double z = lastNozzle.getNozzleTip() == null ? 0 : st.getTipTrimZ(lastNozzle.getNozzleTip().getName());
         return new Location(LengthUnit.Millimeters, st.getNozzleTrimX(lastNozzle.getName()),
-                st.getNozzleTrimY(lastNozzle.getName()), 0, 0);
+                st.getNozzleTrimY(lastNozzle.getName()), z, 0);
     }
 
     @Override
