@@ -482,6 +482,7 @@ public class OrionFeederTest {
         f.setPocketLengthMm(1.15);
         f.setPocketBias(new org.openpnp.model.Location(org.openpnp.model.LengthUnit.Millimeters, 0.04, -0.02, 0, 0));
         mgr.getSettings().getPocketPipeline();
+        mgr.getSettings().setNozzleTrim("N2", 0.05, -0.03);
         Configuration.get().save();
         Configuration.initialize(dir);
         Configuration.get().load();
@@ -491,6 +492,8 @@ public class OrionFeederTest {
                 back = (OrionFeeder) x;
             }
         }
+        assertEquals(0.05, OrionManager.get().getSettings().getNozzleTrimX("N2"), 1e-9);
+        assertEquals(-0.03, OrionManager.get().getSettings().getNozzleTrimY("N2"), 1e-9);
         assertEquals(OrionFeeder.TapeTarget.Pocket, back.getTapeTarget());
         assertEquals(0.65, back.getPocketWidthMm(), 1e-9);
         assertEquals(0.04, back.getPocketBias().getX(), 1e-9);

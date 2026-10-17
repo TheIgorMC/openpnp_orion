@@ -321,3 +321,9 @@ for the rest of the job.
 
 Choice "Every N feeds (N below)" in the Check list, N in the box next to it (default 5). The first feed after a start
 is checked, then every Nth, plus the feed after a failed pick. The measured shift stays in effect between checks.
+
+## Pick trim per nozzle
+
+Bus manager, Feeder identification tab: one X/Y trim (mm) per nozzle. It is added to the pick location of every Orion
+feeder when that nozzle picks (not to the camera's look position), to absorb a nozzle offset error: if N2 lands 0.05 mm
+to the left of where N1 does, give N2 a trim of +0.05 in X. It uses the nozzle the job last fed the feeder for.

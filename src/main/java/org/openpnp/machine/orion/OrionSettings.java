@@ -73,6 +73,28 @@ public class OrionSettings {
     @ElementMap(required = false, entry = "component", key = "part", attribute = true, value = "id")
     private java.util.Map<String, Integer> componentMap = new java.util.HashMap<>();
 
+    /** Pick position trim per nozzle name (mm), added to every pick location of an Orion feeder. */
+    @ElementMap(required = false, entry = "trim-x", key = "nozzle", attribute = true, value = "mm")
+    private java.util.Map<String, Double> nozzleTrimX = new java.util.HashMap<>();
+
+    @ElementMap(required = false, entry = "trim-y", key = "nozzle", attribute = true, value = "mm")
+    private java.util.Map<String, Double> nozzleTrimY = new java.util.HashMap<>();
+
+    public double getNozzleTrimX(String nozzle) {
+        Double v = nozzle == null ? null : nozzleTrimX.get(nozzle);
+        return v == null ? 0 : v;
+    }
+
+    public double getNozzleTrimY(String nozzle) {
+        Double v = nozzle == null ? null : nozzleTrimY.get(nozzle);
+        return v == null ? 0 : v;
+    }
+
+    public void setNozzleTrim(String nozzle, double x, double y) {
+        nozzleTrimX.put(nozzle, x);
+        nozzleTrimY.put(nozzle, y);
+    }
+
     /** A part id that is a plain number (0..65534) is its own component id; no table needed. */
     public static Integer numericId(String partId) {
         if (partId == null) {

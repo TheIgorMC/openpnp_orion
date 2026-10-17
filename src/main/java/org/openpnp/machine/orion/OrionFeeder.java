@@ -592,6 +592,7 @@ public class OrionFeeder extends ReferenceFeeder {
                 return;
         }
         refineByVisionIfNeeded();
+        lastNozzle = nozzle;
         FeedRun pre = takePrefed();
         if (moveWhileFeeding && nozzle != null) {
             feedWhileMoving(nozzle, pre);
@@ -662,7 +663,7 @@ public class OrionFeeder extends ReferenceFeeder {
             feedWhileMovingCamera(nozzle, pre);
             return;
         }
-        Location base = basePickLocation();
+        Location base = basePickLocation().add(nozzleTrim());
         // XY and the pick rotation together, so the nozzle is already turned when it arrives.
         Location overXY = new Location(base.getUnits(), base.getX(), base.getY(), Double.NaN, base.getRotation());
         FeedRun run = pre != null ? pre : startFeedRun();
@@ -750,9 +751,21 @@ public class OrionFeeder extends ReferenceFeeder {
         moveWhileFeeding = v;
     }
 
+    /** The nozzle the job last fed for; its pick trim (Bus manager) is added to the pick location. */
+    private transient Nozzle lastNozzle;
+
+    private Location nozzleTrim() {
+        if (lastNozzle == null) {
+            return new Location(LengthUnit.Millimeters);
+        }
+        OrionSettings st = OrionManager.get().getSettings();
+        return new Location(LengthUnit.Millimeters, st.getNozzleTrimX(lastNozzle.getName()),
+                st.getNozzleTrimY(lastNozzle.getName()), 0, 0);
+    }
+
     @Override
     public Location getPickLocation() throws Exception {
-        Location l = basePickLocation();
+        Location l = basePickLocation().add(nozzleTrim());
         if (holeShiftMm != 0) {
             l = l.add(tapeAxis == org.openpnp.machine.orion.vision.OrionHoleVision.Axis.Y
                     ? new Location(LengthUnit.Millimeters, 0, holeShiftMm, 0, 0)
