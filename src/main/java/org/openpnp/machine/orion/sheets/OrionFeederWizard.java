@@ -72,18 +72,19 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
     private final javax.swing.JCheckBox acrossCb = new javax.swing.JCheckBox("Also correct across the tape");
     private final JLabel holeResult = new JLabel(" ");
     private final javax.swing.JCheckBox prefeedCb = new javax.swing.JCheckBox(
-            "Feed this feeder ahead of the pick (while the nozzle picks / has just risen)");
+            "Feed ahead of the pick (while the nozzle picks / has risen)");
     private final javax.swing.JCheckBox jogCb = new javax.swing.JCheckBox(
-            "Pocket: move the tape with the jog command instead of moving the nozzle");
+            "Pocket: jog the tape instead of moving the nozzle");
     private final JTextField jogMinTf = new JTextField(6);
+    private final JTextField checkNTf = new JTextField(4);
     private final javax.swing.JCheckBox repickCb = new javax.swing.JCheckBox(
-            "If bottom vision loses the part: check the pocket and pick again (2x) instead of stopping");
-    private final javax.swing.JCheckBox movingCb = new javax.swing.JCheckBox("Move (XY + rotation) over the pick spot while the feeder feeds");
+            "Bottom vision lost the part: re-check pocket, pick again (2x)");
+    private final javax.swing.JCheckBox movingCb = new javax.swing.JCheckBox("Move over the pick spot while feeding (XY + rotation)");
 
     /** The result text can be long: wrap it on its own line instead of widening the tab. */
     private void setHoleResult(String text) {
         String esc = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-        holeResult.setText("<html><body style='width:430px'>" + esc + "</body></html>");
+        holeResult.setText("<html><body style='width:380px'>" + esc + "</body></html>");
     }
     private final JTextField slotTf = new JTextField(7);
     private final javax.swing.JCheckBox followCb = new javax.swing.JCheckBox(
@@ -212,8 +213,8 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
 
         // ---- tape position from a sprocket hole
         JPanel hole = OrionUi.grid();
-        hole.setBorder(BorderFactory.createTitledBorder("Vision: tape / pocket check at every pick"));
-        OrionUi.row(hole, 0, "Check", holeModeCb);
+        hole.setBorder(BorderFactory.createTitledBorder("Vision: tape / pocket check"));
+        OrionUi.row(hole, 0, "Check", OrionUi.line(holeModeCb, new JLabel("N ="), checkNTf));
         OrionUi.row(hole, 1, "Look at", targetCb);
         OrionUi.row(hole, 2, "Tape runs along machine axis", tapeAxisCb);
         OrionUi.row(hole, 3, "Reject shifts larger than (mm)", maxHoleTf);
@@ -251,8 +252,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         OrionUi.row(hole, 8, "", movingCb);
         OrionUi.row(hole, 9, "", repickCb);
         OrionUi.row(hole, 10, "", prefeedCb);
-        OrionUi.row(hole, 11, "", jogCb);
-        OrionUi.row(hole, 12, "Jog when the pocket is off along the tape by more than (mm)", jogMinTf);
+        OrionUi.row(hole, 11, "", OrionUi.line(jogCb, new JLabel("if off by more than (mm):"), jogMinTf));
         contentPanel.add(hole);
 
         // ---- live controls
@@ -463,6 +463,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         addWrappedBinding(feeder, "prefeedNext", prefeedCb, "selected");
         addWrappedBinding(feeder, "jogCorrectPocket", jogCb, "selected");
         addWrappedBinding(feeder, "jogMinMm", jogMinTf, "text", plain);
+        addWrappedBinding(feeder, "checkEveryN", checkNTf, "text", intConverter);
         addWrappedBinding(feeder, "visionMode", visionModeCb, "selectedItem");
         addWrappedBinding(feeder, "fiducialPart", fiducialPartCb, "selectedItem");
         addWrappedBinding(feeder, "visionXOnly", xOnlyCb, "selected");

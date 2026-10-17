@@ -67,6 +67,10 @@ final class OrionUi {
         r.fill = GridBagConstraints.NONE;
         r.anchor = GridBagConstraints.LINE_START;
         r.insets = new Insets(2, 0, 2, 4);
+        // A narrow window must not squeeze fields and lists down to a sliver.
+        if (c instanceof javax.swing.text.JTextComponent || c instanceof javax.swing.JComboBox) {
+            c.setMinimumSize(c.getPreferredSize());
+        }
         p.add(c, r);
     }
 
@@ -82,6 +86,10 @@ final class OrionUi {
         JPanel p = new JPanel();
         p.setLayout(new javax.swing.BoxLayout(p, javax.swing.BoxLayout.X_AXIS));
         for (Component c : cs) {
+            if (c instanceof javax.swing.text.JTextComponent || c instanceof javax.swing.JComboBox) {
+                c.setMinimumSize(c.getPreferredSize());
+                c.setMaximumSize(c.getPreferredSize());
+            }
             p.add(c);
             p.add(javax.swing.Box.createHorizontalStrut(6));
         }

@@ -316,3 +316,8 @@ New choice in the Check list. No camera check on normal feeds. When a pick from 
 or bottom vision lost the part and the job repicks), the next feed runs the check, and the measured shift is kept
 for the following picks until the next check. In the "first feed of each job" mode the shift now also stays in effect
 for the rest of the job.
+
+## Check every N feeds
+
+Choice "Every N feeds (N below)" in the Check list, N in the box next to it (default 5). The first feed after a start
+is checked, then every Nth, plus the feed after a failed pick. The measured shift stays in effect between checks.
