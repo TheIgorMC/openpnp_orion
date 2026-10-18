@@ -104,6 +104,11 @@ public class OrionBus {
     /** Same with an explicit number of attempts (1 = send once, never repeat). */
     private synchronized OrionFrame request(int address, int cmd, byte[] payload, int timeoutMs, int attempts)
             throws OrionException {
+        return request(address, cmd, payload, timeoutMs, attempts, true);
+    }
+
+    private synchronized OrionFrame request(int address, int cmd, byte[] payload, int timeoutMs, int attempts,
+            boolean markLostOnFailure) throws OrionException {
         OrionFrame req = new OrionFrame(address, cmd, payload);
         OrionException last = null;
         for (int attempt = 0; attempt < Math.max(1, attempts); attempt++) {
@@ -134,7 +139,9 @@ public class OrionBus {
             touch(address);
             return mine;
         }
-        markLost(address);
+        if (markLostOnFailure) {
+            markLost(address);
+        }
         throw last;
     }
 
@@ -487,7 +494,7 @@ public class OrionBus {
      * reply was just lost and the move counts as done; when it is alive but did not move, the command is sent one
      * more time; when it does not answer at all, the timeout is reported (no further blind repeats).
      */
-    private synchronized void moveVerified(int address, int cmd) throws OrionException {
+    private synchronized void moveVerified(int address, int cmd, int timeoutMs) throws OrionException {
         int before = -1;
         try {
             before = getStatus(address).angleRaw;
@@ -496,7 +503,7 @@ public class OrionBus {
         }
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
-                OrionFrame f = request(address, cmd, new byte[0], MOVE_TIMEOUT_MS, 1);
+                OrionFrame f = request(address, cmd, new byte[0], timeoutMs, 1, false);
                 if (f.command != OrionCommand.ACK) {
                     throw new OrionException(OrionException.Kind.UNEXPECTED_REPLY, "Expected ACK");
                 }
@@ -547,11 +554,20 @@ public class OrionBus {
     }
 
     public void feedNext(int address) throws OrionException {
-        moveVerified(address, OrionCommand.FEED_NEXT);
+        moveVerified(address, OrionCommand.FEED_NEXT, MOVE_TIMEOUT_MS);
+    }
+
+    /** timeoutMs: how long a feed of this pitch can take at most (a missing reply is checked after that). */
+    public void feedNext(int address, int timeoutMs) throws OrionException {
+        moveVerified(address, OrionCommand.FEED_NEXT, timeoutMs);
     }
 
     public void feedBack(int address) throws OrionException {
-        moveVerified(address, OrionCommand.FEED_BACK);
+        moveVerified(address, OrionCommand.FEED_BACK, MOVE_TIMEOUT_MS);
+    }
+
+    public void feedBack(int address, int timeoutMs) throws OrionException {
+        moveVerified(address, OrionCommand.FEED_BACK, timeoutMs);
     }
 
     /** Jog in 0.1 mm units, negative = backwards. Returns the new raw angle. */

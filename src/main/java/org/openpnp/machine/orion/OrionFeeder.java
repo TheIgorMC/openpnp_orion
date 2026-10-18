@@ -540,10 +540,13 @@ public class OrionFeeder extends ReferenceFeeder {
                 throw e;
             }
             try {
+                // A feed takes roughly 0.4 s per mm of pitch plus a base; a missing reply is looked into after that
+                // instead of after a fixed 12 s.
+                int timeoutMs = pitchMm > 0 ? 3000 + 700 * pitchMm : 12000;
                 if (move == Move.FEED) {
-                    l.bus.feedNext(l.address());
+                    l.bus.feedNext(l.address(), timeoutMs);
                 } else {
-                    l.bus.feedBack(l.address());
+                    l.bus.feedBack(l.address(), timeoutMs);
                 }
                 return;
             } catch (OrionException e) {

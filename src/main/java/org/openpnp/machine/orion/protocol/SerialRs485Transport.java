@@ -42,14 +42,38 @@ public class SerialRs485Transport implements OrionTransport {
         channel.close();
     }
 
+    /** Minimum pause (ms) between the end of one exchange and the start of the next on the bus. */
+    public static volatile int GUARD_MS = 8;
+
+    private volatile long lastEndNanos = 0;
+
     @Override
     public synchronized List<OrionFrame> exchange(int rail, OrionFrame request, int timeoutMs,
             int collectMs) throws OrionException {
+        try {
+            return exchangeNow(rail, request, timeoutMs, collectMs);
+        } finally {
+            lastEndNanos = System.nanoTime();
+        }
+    }
+
+    private List<OrionFrame> exchangeNow(int rail, OrionFrame request, int timeoutMs, int collectMs)
+            throws OrionException {
         if (rail != 0) {
             throw new OrionException(OrionException.Kind.TRANSPORT,
                     "USB-RS485 adapter has a single rail (got rail " + rail + ")");
         }
         byte[] tx = request.encode();
+        // Give the previous unit time to release the bus (end of its last byte, driver switching back to receive)
+        // before the next frame goes out: back-to-back frames were sometimes lost on the way to the unit.
+        long sinceLast = (System.nanoTime() - lastEndNanos) / 1_000_000;
+        if (sinceLast < GUARD_MS) {
+            try {
+                Thread.sleep(GUARD_MS - sinceLast);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         channel.flushInput();
         channel.write(tx);
 
