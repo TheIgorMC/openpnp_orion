@@ -138,6 +138,46 @@ public final class OrionPocketVision {
      * otherwise from the last stage that did, so a pipeline that was edited still works.
      */
     public static Found find(CvPipeline template, Camera camera) throws Exception {
+        return find(template, camera, 0, 0, 0);
+    }
+
+    /**
+     * Pipeline parameters taken from the feeder's pocket size (mm, 0 = unknown) and tolerance (fraction), given
+     * to the pipeline as properties:
+     * <pre>
+     * pocket.widthMm, pocket.lengthMm, pocket.tolerance       as set on the feeder
+     * pocket.widthPx, pocket.lengthPx                          the same at the camera's scale
+     * pocket.minAreaPx, pocket.maxAreaPx                       area range of a pocket (with tolerance), px^2
+     * </pre>
+     * and applied to every FilterContours stage, whose min / max area are overwritten with that range, so the
+     * pipeline only has to be tuned for the picture, not for the size.
+     */
+    public static double[] applySizeParameters(CvPipeline pipeline, double widthMm, double lengthMm, double tol,
+            double uppX, double uppY) {
+        if (widthMm <= 0 || lengthMm <= 0 || uppX <= 0 || uppY <= 0) {
+            return null;
+        }
+        double wPx = widthMm / uppX, lPx = lengthMm / uppY;
+        double minA = widthMm * (1 - tol) * lengthMm * (1 - tol) / (uppX * uppY);
+        double maxA = widthMm * (1 + tol) * lengthMm * (1 + tol) / (uppX * uppY);
+        pipeline.setProperty("pocket.widthMm", widthMm);
+        pipeline.setProperty("pocket.lengthMm", lengthMm);
+        pipeline.setProperty("pocket.tolerance", tol);
+        pipeline.setProperty("pocket.widthPx", wPx);
+        pipeline.setProperty("pocket.lengthPx", lPx);
+        pipeline.setProperty("pocket.minAreaPx", minA);
+        pipeline.setProperty("pocket.maxAreaPx", maxA);
+        for (CvStage st : pipeline.getStages()) {
+            if (st instanceof org.openpnp.vision.pipeline.stages.FilterContours) {
+                ((org.openpnp.vision.pipeline.stages.FilterContours) st).setMinArea(minA);
+                ((org.openpnp.vision.pipeline.stages.FilterContours) st).setMaxArea(maxA);
+            }
+        }
+        return new double[] {minA, maxA};
+    }
+
+    public static Found find(CvPipeline template, Camera camera, double widthMm, double lengthMm, double tol)
+            throws Exception {
         Found found = new Found();
         // Light on (usually already switched on before the camera moved) and given time to settle, so the
         // first frame is not overexposed.
@@ -152,6 +192,8 @@ public final class OrionPocketVision {
         }
         try (CvPipeline pipeline = template.clone()) {
             pipeline.setProperty("camera", camera);
+            Location upp = camera.getUnitsPerPixelAtZ().convertToUnits(LengthUnit.Millimeters);
+            double[] area = applySizeParameters(pipeline, widthMm, lengthMm, tol, upp.getX(), upp.getY());
             pipeline.process();
             List<double[]> px = new ArrayList<>();
             StringBuilder diag = new StringBuilder();
@@ -185,7 +227,8 @@ public final class OrionPocketVision {
                     used = st.getName();
                 }
             }
-            found.diagnostics = used == null ? "no stage returned a rectangle. Stages: " + diag : "from stage " + used;
+            found.diagnostics = (used == null ? "no stage returned a rectangle. Stages: " + diag : "from stage " + used)
+                    + (area == null ? "" : String.format(" (area filter %.0f..%.0f px)", area[0], area[1]));
             Location o = VisionUtils.getPixelCenterOffsets(camera, 0, 0);
             for (double[] r : px) {
                 Location c = VisionUtils.getPixelLocation(camera, r[0], r[1]);

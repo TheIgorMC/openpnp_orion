@@ -120,4 +120,23 @@ public class OrionPocketVisionTest {
         List<Candidate> c = Arrays.asList(new Candidate(loc(5, 5), 3, 4), new Candidate(loc(1, 1), 0.2, 0.9));
         assertEquals(1.0, OrionPocketVision.select(c, 0, 0, 0.35, loc(0.8, 1.2)).center.getX(), 1e-9);
     }
+
+    @Test
+    void feederPocketSizeBecomesPipelineParameters() throws Exception {
+        org.openpnp.vision.pipeline.CvPipeline p = OrionPipelines.defaultPocketPipeline();
+        double[] area = OrionPocketVision.applySizeParameters(p, 1.0, 2.0, 0.25, 0.02, 0.02);
+        // 1.0 x 2.0 mm at 0.02 mm/px = 50 x 100 px = 5000 px^2, +-25 % on each side
+        assertEquals(5000 * 0.75 * 0.75, area[0], 1e-6);
+        assertEquals(5000 * 1.25 * 1.25, area[1], 1e-6);
+        org.openpnp.vision.pipeline.stages.FilterContours f = null;
+        for (org.openpnp.vision.pipeline.CvStage st : p.getStages()) {
+            if (st instanceof org.openpnp.vision.pipeline.stages.FilterContours) {
+                f = (org.openpnp.vision.pipeline.stages.FilterContours) st;
+            }
+        }
+        assertEquals(area[0], f.getMinArea(), 1e-6);
+        assertEquals(area[1], f.getMaxArea(), 1e-6);
+        assertEquals(100.0, (Double) p.getProperty("pocket.lengthPx"), 1e-6);
+        assertEquals(null, OrionPocketVision.applySizeParameters(p, 0, 0, 0.25, 0.02, 0.02), "size 0 = any: untouched");
+    }
 }

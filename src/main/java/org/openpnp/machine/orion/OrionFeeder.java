@@ -988,7 +988,8 @@ public class OrionFeeder extends ReferenceFeeder {
                     base.getX(), base.getY(), pocketCamZ(cam), base.getRotation()));
         }
         org.openpnp.machine.orion.vision.OrionPocketVision.Found res =
-                org.openpnp.machine.orion.vision.OrionPocketVision.find(st.getPocketPipeline(), cam);
+                org.openpnp.machine.orion.vision.OrionPocketVision.find(st.getPocketPipeline(), cam, pocketWidthMm,
+                        pocketLengthMm, pocketSizeTolPct / 100.0);
         java.util.List<org.openpnp.machine.orion.vision.OrionPocketVision.Candidate> found = res.candidates;
         org.openpnp.machine.orion.vision.OrionPocketVision.Candidate c =
                 org.openpnp.machine.orion.vision.OrionPocketVision.select(found, pocketWidthMm, pocketLengthMm,
@@ -1060,7 +1061,8 @@ public class OrionFeeder extends ReferenceFeeder {
         OrionSettings st = OrionManager.get().getSettings();
         org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
         org.openpnp.machine.orion.vision.OrionPocketVision.Found res =
-                org.openpnp.machine.orion.vision.OrionPocketVision.find(st.getPocketPipeline(), cam);
+                org.openpnp.machine.orion.vision.OrionPocketVision.find(st.getPocketPipeline(), cam, pocketWidthMm,
+                        pocketLengthMm, pocketSizeTolPct / 100.0);
         java.util.List<org.openpnp.machine.orion.vision.OrionPocketVision.Candidate> found = res.candidates;
         org.openpnp.machine.orion.vision.OrionPocketVision.Candidate c =
                 org.openpnp.machine.orion.vision.OrionPocketVision.select(found, pocketWidthMm, pocketLengthMm,

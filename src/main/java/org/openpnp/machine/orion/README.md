@@ -327,3 +327,15 @@ is checked, then every Nth, plus the feed after a failed pick. The measured shif
 Bus manager, "Nozzle pick trim" tab: one X/Y trim (mm) per nozzle. It is added to the pick location of every Orion
 feeder when that nozzle picks (not to the camera's look position), to absorb a nozzle offset error: if N2 lands 0.05 mm
 to the left of where N1 does, give N2 a trim of +0.05 in X. It uses the nozzle the job last fed the feeder for.
+
+## Pocket pipeline parameters
+
+When the feeder has a pocket size (W x L) set, it is handed to the pocket pipeline at every run:
+- as pipeline properties `pocket.widthMm`, `pocket.lengthMm`, `pocket.tolerance` (fraction), `pocket.widthPx`,
+  `pocket.lengthPx`, `pocket.minAreaPx`, `pocket.maxAreaPx` (the camera's scale at that moment), for stages or scripts
+  that want them;
+- and every **FilterContours** stage of the pipeline gets its min / max area overwritten with the area range of one
+  pocket (nominal area -+ tolerance on each side). So tune the pipeline for the picture (blur, threshold, contours) and let
+  the size come from the feeder: an 0805 pocket then ignores 0402-sized blobs and the other way round.
+In the pipeline editor the FilterContours values you see are only defaults; they are replaced when the check runs.
+With size 0 x 0 (any), nothing is overwritten. The result still goes through the size and nearest-pocket selection.
