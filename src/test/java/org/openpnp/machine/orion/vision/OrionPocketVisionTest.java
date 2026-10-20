@@ -139,4 +139,24 @@ public class OrionPocketVisionTest {
         assertEquals(100.0, (Double) p.getProperty("pocket.lengthPx"), 1e-6);
         assertEquals(null, OrionPocketVision.applySizeParameters(p, 0, 0, 0.25, 0.02, 0.02), "size 0 = any: untouched");
     }
+
+    @Test
+    void cropWindowHoldsThePocketButNotTheNeighbours() throws Exception {
+        // 0.7 x 1.3 mm pocket, 2 mm pitch, tape along Y, shifts up to 1.5 mm asked for (limited to 45 % of pitch)
+        OrionPocketVision.Params g = OrionPocketVision.Params.forFeeder(0.7, 1.3, 0.35, 2, 1.5, true);
+        assertEquals(0.7 + 2 * 0.9, g.cropAcrossMm, 1e-9);
+        // along: not further than the neighbour's edge (pitch - length/2 - 0.05 = 1.3 from the centre)
+        assertEquals(2.6, g.cropAlongMm, 1e-9);
+        org.openpnp.vision.pipeline.CvPipeline p = OrionPipelines.defaultPocketPipeline();
+        org.openpnp.vision.pipeline.stages.MaskRectangle crop = new org.openpnp.vision.pipeline.stages.MaskRectangle();
+        p.add("crop", crop);
+        OrionPocketVision.applySizeParameters(p, g, 0.02, 0.02);
+        assertEquals(125, crop.getWidth());   // 2.5 mm across the tape = image X
+        assertEquals(130, crop.getHeight());  // 2.6 mm along the tape = image Y
+        // tape along X: swapped
+        OrionPocketVision.Params gx = OrionPocketVision.Params.forFeeder(0.7, 1.3, 0.35, 2, 1.5, false);
+        OrionPocketVision.applySizeParameters(p, gx, 0.02, 0.02);
+        assertEquals(130, crop.getWidth());
+        assertEquals(125, crop.getHeight());
+    }
 }

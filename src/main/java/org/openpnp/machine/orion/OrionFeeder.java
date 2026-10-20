@@ -787,6 +787,13 @@ public class OrionFeeder extends ReferenceFeeder {
         return l;
     }
 
+    /** The pocket geometry for the pipeline: sizes, tolerance and the crop window that holds only this pocket. */
+    private org.openpnp.machine.orion.vision.OrionPocketVision.Params pocketGeometry() {
+        return org.openpnp.machine.orion.vision.OrionPocketVision.Params.forFeeder(pocketWidthMm, pocketLengthMm,
+                pocketSizeTolPct / 100.0, pitchMm, maxHoleCorrectionMm,
+                tapeAxis == org.openpnp.machine.orion.vision.OrionHoleVision.Axis.Y);
+    }
+
     /** Taught pick location plus slot follow and fiducial correction, before any per-pick tape check. */
     private Location basePickLocation() throws Exception {
         Location l = location;
@@ -988,8 +995,7 @@ public class OrionFeeder extends ReferenceFeeder {
                     base.getX(), base.getY(), pocketCamZ(cam), base.getRotation()));
         }
         org.openpnp.machine.orion.vision.OrionPocketVision.Found res =
-                org.openpnp.machine.orion.vision.OrionPocketVision.find(st.getPocketPipeline(), cam, pocketWidthMm,
-                        pocketLengthMm, pocketSizeTolPct / 100.0);
+                org.openpnp.machine.orion.vision.OrionPocketVision.find(st.getPocketPipeline(), cam, pocketGeometry());
         java.util.List<org.openpnp.machine.orion.vision.OrionPocketVision.Candidate> found = res.candidates;
         org.openpnp.machine.orion.vision.OrionPocketVision.Candidate c =
                 org.openpnp.machine.orion.vision.OrionPocketVision.select(found, pocketWidthMm, pocketLengthMm,
@@ -1061,8 +1067,7 @@ public class OrionFeeder extends ReferenceFeeder {
         OrionSettings st = OrionManager.get().getSettings();
         org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
         org.openpnp.machine.orion.vision.OrionPocketVision.Found res =
-                org.openpnp.machine.orion.vision.OrionPocketVision.find(st.getPocketPipeline(), cam, pocketWidthMm,
-                        pocketLengthMm, pocketSizeTolPct / 100.0);
+                org.openpnp.machine.orion.vision.OrionPocketVision.find(st.getPocketPipeline(), cam, pocketGeometry());
         java.util.List<org.openpnp.machine.orion.vision.OrionPocketVision.Candidate> found = res.candidates;
         org.openpnp.machine.orion.vision.OrionPocketVision.Candidate c =
                 org.openpnp.machine.orion.vision.OrionPocketVision.select(found, pocketWidthMm, pocketLengthMm,

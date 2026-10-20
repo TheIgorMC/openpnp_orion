@@ -141,43 +141,102 @@ public final class OrionPocketVision {
         return find(template, camera, 0, 0, 0);
     }
 
+    /** The feeder's pocket geometry, handed to the pocket pipeline. Sizes in mm, 0 = unknown. */
+    public static class Params {
+        public double widthMm, lengthMm;
+        /** Size tolerance as a fraction (0.35 = 35 %). */
+        public double tolerance;
+        /** Crop window: across the tape and along it (so that it holds this pocket but not the neighbours). 0 = none. */
+        public double cropAcrossMm, cropAlongMm;
+        public boolean tapeAlongY = true;
+
+        public Params() {}
+
+        public Params(double widthMm, double lengthMm, double tolerance) {
+            this.widthMm = widthMm;
+            this.lengthMm = lengthMm;
+            this.tolerance = tolerance;
+        }
+
+        /**
+         * Crop window for a pocket: the pocket plus what it may be off by on each side, but along the tape never
+         * reaching the neighbouring pockets (pitch away).
+         */
+        public static Params forFeeder(double widthMm, double lengthMm, double tolerance, int pitchMm,
+                double maxShiftMm, boolean tapeAlongY) {
+            Params p = new Params(widthMm, lengthMm, tolerance);
+            p.tapeAlongY = tapeAlongY;
+            if (widthMm > 0 && lengthMm > 0) {
+                double allow = pitchMm > 0 ? Math.min(maxShiftMm, 0.45 * pitchMm) : maxShiftMm;
+                p.cropAcrossMm = widthMm + 2 * allow;
+                double half = lengthMm / 2 + allow;
+                if (pitchMm > 0) {
+                    half = Math.max(lengthMm / 2 + 0.1, Math.min(half, pitchMm - lengthMm / 2 - 0.05));
+                }
+                p.cropAlongMm = 2 * half;
+            }
+            return p;
+        }
+    }
+
     /**
-     * Pipeline parameters taken from the feeder's pocket size (mm, 0 = unknown) and tolerance (fraction), given
-     * to the pipeline as properties:
+     * Pipeline parameters from the feeder's pocket geometry, given to the pipeline as properties:
      * <pre>
      * pocket.widthMm, pocket.lengthMm, pocket.tolerance       as set on the feeder
      * pocket.widthPx, pocket.lengthPx                          the same at the camera's scale
      * pocket.minAreaPx, pocket.maxAreaPx                       area range of a pocket (with tolerance), px^2
+     * pocket.cropAcrossMm / cropAlongMm (and ...Px)            crop window around this pocket
      * </pre>
-     * and applied to every FilterContours stage, whose min / max area are overwritten with that range, so the
-     * pipeline only has to be tuned for the picture, not for the size.
+     * and applied: every FilterContours stage gets its min / max area overwritten with that range, and every
+     * MaskRectangle stage (the crop) gets its width / height from the crop window, so the pipeline only has to be
+     * tuned for the picture, not for the size. Returns {minAreaPx, maxAreaPx}, or null if no size is set.
      */
-    public static double[] applySizeParameters(CvPipeline pipeline, double widthMm, double lengthMm, double tol,
-            double uppX, double uppY) {
-        if (widthMm <= 0 || lengthMm <= 0 || uppX <= 0 || uppY <= 0) {
+    public static double[] applySizeParameters(CvPipeline pipeline, Params g, double uppX, double uppY) {
+        if (g.widthMm <= 0 || g.lengthMm <= 0 || uppX <= 0 || uppY <= 0) {
             return null;
         }
-        double wPx = widthMm / uppX, lPx = lengthMm / uppY;
-        double minA = widthMm * (1 - tol) * lengthMm * (1 - tol) / (uppX * uppY);
-        double maxA = widthMm * (1 + tol) * lengthMm * (1 + tol) / (uppX * uppY);
-        pipeline.setProperty("pocket.widthMm", widthMm);
-        pipeline.setProperty("pocket.lengthMm", lengthMm);
+        double tol = g.tolerance;
+        double wPx = g.widthMm / uppX, lPx = g.lengthMm / uppY;
+        double minA = g.widthMm * (1 - tol) * g.lengthMm * (1 - tol) / (uppX * uppY);
+        double maxA = g.widthMm * (1 + tol) * g.lengthMm * (1 + tol) / (uppX * uppY);
+        pipeline.setProperty("pocket.widthMm", g.widthMm);
+        pipeline.setProperty("pocket.lengthMm", g.lengthMm);
         pipeline.setProperty("pocket.tolerance", tol);
         pipeline.setProperty("pocket.widthPx", wPx);
         pipeline.setProperty("pocket.lengthPx", lPx);
         pipeline.setProperty("pocket.minAreaPx", minA);
         pipeline.setProperty("pocket.maxAreaPx", maxA);
+        // Image X is machine X: across the tape when the tape runs along Y.
+        double cropXmm = g.tapeAlongY ? g.cropAcrossMm : g.cropAlongMm;
+        double cropYmm = g.tapeAlongY ? g.cropAlongMm : g.cropAcrossMm;
+        int cropWPx = (int) Math.round(cropXmm / uppX), cropHPx = (int) Math.round(cropYmm / uppY);
+        pipeline.setProperty("pocket.cropAcrossMm", g.cropAcrossMm);
+        pipeline.setProperty("pocket.cropAlongMm", g.cropAlongMm);
+        pipeline.setProperty("pocket.cropWidthPx", cropWPx);
+        pipeline.setProperty("pocket.cropHeightPx", cropHPx);
         for (CvStage st : pipeline.getStages()) {
             if (st instanceof org.openpnp.vision.pipeline.stages.FilterContours) {
                 ((org.openpnp.vision.pipeline.stages.FilterContours) st).setMinArea(minA);
                 ((org.openpnp.vision.pipeline.stages.FilterContours) st).setMaxArea(maxA);
+            } else if (st instanceof org.openpnp.vision.pipeline.stages.MaskRectangle && cropWPx > 0 && cropHPx > 0) {
+                ((org.openpnp.vision.pipeline.stages.MaskRectangle) st).setWidth(cropWPx);
+                ((org.openpnp.vision.pipeline.stages.MaskRectangle) st).setHeight(cropHPx);
             }
         }
         return new double[] {minA, maxA};
     }
 
+    public static double[] applySizeParameters(CvPipeline pipeline, double widthMm, double lengthMm, double tol,
+            double uppX, double uppY) {
+        return applySizeParameters(pipeline, new Params(widthMm, lengthMm, tol), uppX, uppY);
+    }
+
     public static Found find(CvPipeline template, Camera camera, double widthMm, double lengthMm, double tol)
             throws Exception {
+        return find(template, camera, new Params(widthMm, lengthMm, tol));
+    }
+
+    public static Found find(CvPipeline template, Camera camera, Params geometry) throws Exception {
         Found found = new Found();
         // Light on (usually already switched on before the camera moved) and given time to settle, so the
         // first frame is not overexposed.
@@ -193,7 +252,7 @@ public final class OrionPocketVision {
         try (CvPipeline pipeline = template.clone()) {
             pipeline.setProperty("camera", camera);
             Location upp = camera.getUnitsPerPixelAtZ().convertToUnits(LengthUnit.Millimeters);
-            double[] area = applySizeParameters(pipeline, widthMm, lengthMm, tol, upp.getX(), upp.getY());
+            double[] area = applySizeParameters(pipeline, geometry, upp.getX(), upp.getY());
             pipeline.process();
             List<double[]> px = new ArrayList<>();
             StringBuilder diag = new StringBuilder();

@@ -339,3 +339,12 @@ When the feeder has a pocket size (W x L) set, it is handed to the pocket pipeli
   the size come from the feeder: an 0805 pocket then ignores 0402-sized blobs and the other way round.
 In the pipeline editor the FilterContours values you see are only defaults; they are replaced when the check runs.
 With size 0 x 0 (any), nothing is overwritten. The result still goes through the size and nearest-pocket selection.
+
+### Crop window
+
+Every **MaskRectangle** stage of the pocket pipeline (the "crop" around the pick spot) gets its width / height from the
+feeder: across the tape the pocket width plus the allowed shift on each side, along the tape the pocket length plus the
+allowed shift but **never further than the neighbouring pocket's edge** (pitch - length/2). Example, 0.7 x 1.3 mm pocket on
+a 2 mm pitch tape: 2.5 mm across, 2.6 mm along, so the next pocket is just outside. Which side is X / Y in the image
+follows "Tape runs along machine axis". The values are also available as the properties `pocket.cropAcrossMm`,
+`pocket.cropAlongMm`, `pocket.cropWidthPx`, `pocket.cropHeightPx`. The allowed shift is the Reject limit, at most 45 % of the pitch.
