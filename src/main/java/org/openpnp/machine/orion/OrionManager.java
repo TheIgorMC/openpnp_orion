@@ -555,7 +555,7 @@ public class OrionManager {
         RailCheck c = checks.get(rail);
         if (c == null) {
             return "Rail " + (rail + 1) + " has not been checked by vision since the program started "
-                    + "(Orion Bus Manager > Verify rail). Feeder locations may be off.";
+                    + "(Feeder bus manager > Verify rail by vision). Feeder locations may be off.";
         }
         if (!c.clean) {
             return "The last vision check of rail " + (rail + 1) + " found problems: " + c.summary;

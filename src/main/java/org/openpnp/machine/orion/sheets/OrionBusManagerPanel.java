@@ -41,36 +41,77 @@ import org.openpnp.spi.Feeder;
  */
 public class OrionBusManagerPanel extends JPanel implements OrionManager.Listener {
     private final OrionManager mgr = OrionManager.get();
-    private final JLabel statusLabel = new JLabel();
+    private final JTabbedPane main = new JTabbedPane();
     private final JTabbedPane railTabs = new JTabbedPane();
+    private final JPanel visionHolder = new JPanel(new BorderLayout());
+    private final JLabel connLabel = new JLabel();
+    private final JLabel monitorLabel = new JLabel();
+    private final JButton connectButton = new JButton("Connect");
     private final JProgressBar progress = new JProgressBar();
     private int builtRails = -1;
 
     public OrionBusManagerPanel() {
         setLayout(new BorderLayout());
-        JTabbedPane top = new JTabbedPane();
-        top.addTab("Connection", buildConnectionPanel());
-        top.addTab("Feeder identification (fiber / tape)", buildIdentifyPanel());
-        top.addTab("Nozzle pick trim", buildNozzleTrimPanel());
-        add(top, BorderLayout.NORTH);
-        add(railTabs, BorderLayout.CENTER);
-        JPanel south = new JPanel(new BorderLayout());
-        south.add(statusLabel, BorderLayout.CENTER);
+        JPanel feeders = new JPanel(new BorderLayout());
+        feeders.add(buildHeader(), BorderLayout.NORTH);
+        feeders.add(railTabs, BorderLayout.CENTER);
         progress.setStringPainted(true);
         progress.setVisible(false);
-        progress.setPreferredSize(new java.awt.Dimension(2 * progress.getPreferredSize().width,
-                progress.getPreferredSize().height));
-        south.add(progress, BorderLayout.EAST);
-        add(south, BorderLayout.SOUTH);
+        feeders.add(progress, BorderLayout.SOUTH);
+        main.addTab("Feeders", feeders);
+        main.addTab("Connection and monitor", top(buildConnectionPanel(), buildMonitorPanel()));
+        main.addTab("Rail vision scan", visionHolder);
+        main.addTab("Fiber / tape identification", top(buildIdentifyPanel()));
+        main.addTab("Nozzle trim", top(buildNozzleTrimPanel()));
+        main.addTab("Bus log", new OrionDebugPanel());
+        add(main, BorderLayout.CENTER);
         mgr.addListener(this);
+        rebuildRails();
+        refreshHeader();
+    }
+
+    /** Switch to the bus log / raw command tab. */
+    public void showLog() {
+        main.setSelectedIndex(main.getTabCount() - 1);
+    }
+
+    /** Stack panels at the top of their tab instead of stretching them over the whole height. */
+    private static JPanel top(JPanel... ps) {
+        JPanel box = new JPanel();
+        box.setLayout(new javax.swing.BoxLayout(box, javax.swing.BoxLayout.Y_AXIS));
+        for (JPanel p : ps) {
+            p.setAlignmentX(Component.LEFT_ALIGNMENT);
+            box.add(p);
+        }
+        JPanel out = new JPanel(new BorderLayout());
+        out.add(box, BorderLayout.NORTH);
+        return out;
+    }
+
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        mgr.addListener(this);
+        clock.start();
         rebuildRails();
     }
 
     @Override
     public void removeNotify() {
+        clock.stop();
         mgr.removeListener(this);
         super.removeNotify();
     }
+
+    /** Once a second: "pinged 2 s ago" and the countdown of the automatic scan. */
+    private final javax.swing.Timer clock = new javax.swing.Timer(1000, e -> {
+        refreshHeader();
+        for (Component c : railTabs.getComponents()) {
+            if (c instanceof RailPanel) {
+                ((RailPanel) c).refreshPending();
+            }
+        }
+    });
 
     // ------------------------------------------------------------------ connection
 
@@ -129,17 +170,6 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         policy.addActionListener(e -> s.setUnverifiedPolicy((OrionSettings.UnverifiedPolicy) policy.getSelectedItem()));
         OrionUi.row(p, 8, "If a rail was not verified by vision when a job starts", policy);
 
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton connect = new JButton("Connect");
-        connect.addActionListener(e -> OrionUi.run("Connect", () -> mgr.connect()));
-        JButton disconnect = new JButton("Disconnect");
-        disconnect.addActionListener(e -> mgr.disconnect());
-        JButton scanAll = new JButton("Scan all rails");
-        scanAll.addActionListener(e -> scan(null));
-        buttons.add(connect);
-        buttons.add(disconnect);
-        buttons.add(scanAll);
-        OrionUi.row(p, 7, "", buttons);
         return p;
     }
 
@@ -327,6 +357,124 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         }
     }
 
+    // ------------------------------------------------------------------ header (connection, monitor, reset)
+
+    private JPanel buildHeader() {
+        JPanel bar = new JPanel(new BorderLayout(12, 0));
+        bar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, javax.swing.UIManager.getColor("Component.borderColor") == null
+                        ? Color.LIGHT_GRAY : javax.swing.UIManager.getColor("Component.borderColor")),
+                BorderFactory.createEmptyBorder(6, 10, 6, 10)));
+        JPanel left = new JPanel();
+        left.setLayout(new javax.swing.BoxLayout(left, javax.swing.BoxLayout.Y_AXIS));
+        connLabel.setFont(connLabel.getFont().deriveFont(java.awt.Font.BOLD, connLabel.getFont().getSize2D() + 1f));
+        monitorLabel.setForeground(javax.swing.UIManager.getColor("Label.disabledForeground"));
+        left.add(connLabel);
+        left.add(monitorLabel);
+        bar.add(left, BorderLayout.CENTER);
+
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        connectButton.addActionListener(e -> {
+            if (mgr.isConnected()) {
+                mgr.disconnect();
+            } else {
+                OrionUi.run("Connect", () -> {
+                    mgr.connect();
+                    for (OrionBus b : mgr.getBuses()) {
+                        b.scan(null);
+                    }
+                    mgr.refresh();
+                });
+            }
+        });
+        right.add(connectButton);
+        right.add(button("Scan all rails", () -> scan(null)));
+        JButton reset = new JButton("Reset bus ▾");
+        reset.setToolTipText("Bring a hung bus back without unplugging the adapter");
+        javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
+        javax.swing.JMenuItem soft = new javax.swing.JMenuItem("Reset bus (reopen the port)");
+        soft.setToolTipText("Closes and reopens the USB port, clears stale data, then re-scans. Feeders keep power.");
+        soft.addActionListener(e -> resetBus(false));
+        javax.swing.JMenuItem hard = new javax.swing.JMenuItem("Hard reset (also power-cycle the rails)");
+        hard.setToolTipText("Host board only: switches the rail supply off and on, which also frees a feeder "
+                + "that is stuck talking. Feeders restart and get their old addresses back.");
+        hard.addActionListener(e -> {
+            if (JOptionPane.showConfirmDialog(this, "Power-cycle the feeder rails? Feeders restart (about 3 s).",
+                    "Hard reset", JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION) {
+                resetBus(true);
+            }
+        });
+        menu.add(soft);
+        menu.add(hard);
+        reset.addActionListener(e -> menu.show(reset, 0, reset.getHeight()));
+        right.add(reset);
+        bar.add(right, BorderLayout.EAST);
+        return bar;
+    }
+
+    private void resetBus(boolean hard) {
+        OrionUi.run(hard ? "Hard reset" : "Reset bus", () -> {
+            if (!mgr.resetBus(hard, "requested by the user")) {
+                throw new Exception("The port could not be reopened: " + mgr.getLastError());
+            }
+            for (OrionBus b : mgr.getBuses()) {
+                b.scan(null);
+            }
+            if (mgr.getSettings().isAutoCreateFeeders()) {
+                for (OrionBus b : mgr.getBuses()) {
+                    mgr.createFeedersForUnbound(b.getRail());
+                }
+            }
+            mgr.refresh();
+        });
+    }
+
+    private void refreshHeader() {
+        boolean connected = mgr.isConnected();
+        int total = 0;
+        int online = 0;
+        for (OrionBus b : mgr.getBuses()) {
+            for (OrionDeviceInfo d : b.getDevices()) {
+                total++;
+                if (d.state == OrionDeviceInfo.State.ONLINE) {
+                    online++;
+                }
+            }
+        }
+        java.awt.Color c = !connected ? OrionLed.RED : (online < total ? OrionLed.AMBER : OrionLed.GREEN);
+        connLabel.setIcon(new OrionLed(c, 12));
+        connLabel.setIconTextGap(8);
+        connLabel.setText(connected ? mgr.describeConnection() + "   ·   " + online + " of " + total
+                + " feeder(s) answering" : "Not connected" + (mgr.getLastError().isEmpty() ? ""
+                        : "   (" + mgr.getLastError() + ")"));
+        org.openpnp.machine.orion.OrionBusMonitor mon = mgr.getMonitor();
+        String ago = mon.getLastSweepMs() == 0 ? "" : "   ·   last ping sweep "
+                + Math.max(0, (System.currentTimeMillis() - mon.getLastSweepMs()) / 1000) + " s ago";
+        monitorLabel.setText(connected ? "Monitor: " + mon.getStatus() + ago
+                : "Choose the interface in the Connection tab, then press Connect.");
+        connectButton.setText(connected ? "Disconnect" : "Connect");
+    }
+
+    /** Background pings, new feeder detection and bus recovery settings. */
+    private JPanel buildMonitorPanel() {
+        OrionSettings s = mgr.getSettings();
+        JPanel p = OrionUi.grid();
+        p.setBorder(BorderFactory.createTitledBorder("Monitor (runs only while no job or machine task is active)"));
+        JCheckBox on = new JCheckBox("Ping every feeder regularly, look for new ones and recover a hung bus",
+                s.isMonitorEnabled());
+        on.addActionListener(e -> s.setMonitorEnabled(on.isSelected()));
+        OrionUi.row(p, 0, "", on);
+        OrionUi.row(p, 1, "Seconds between ping sweeps", spinner(s.getMonitorIntervalS(), 1, 60, 1,
+                v -> s.setMonitorIntervalS((int) v)));
+        OrionUi.row(p, 2, "Scan the rail automatically after (s)", spinner(s.getAutoScanDelayS(), 5, 600, 5,
+                v -> s.setAutoScanDelayS((int) v)));
+        OrionUi.row(p, 3, "", new JLabel("<html><body style='width:520px'>A feeder that stops answering turns red "
+                + "after two missed pings. A newly plugged feeder is announced; if no other one is added for the "
+                + "time above, the rail is scanned and it gets its address. If nothing on a rail answers for "
+                + "three sweeps, the port is reopened (then the rails are power-cycled on a host board).</body></html>"));
+        return p;
+    }
+
     // ------------------------------------------------------------------ scanning
 
     /** Scan one rail (or all when rail is null) as a machine task with a progress bar. */
@@ -346,6 +494,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                     }));
                     mgr.addLog(b.getRail(), org.openpnp.machine.orion.protocol.OrionBusListener.Direction.INFO,
                             "Scan finished, " + added + " new unit(s)");
+                    mgr.getMonitor().cancelAutoScan(b.getRail());
                 }
             } finally {
                 OrionUi.onEdt(() -> progress.setVisible(false));
@@ -354,26 +503,44 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         });
     }
 
-    // ------------------------------------------------------------------ per-rail tables
+    // ------------------------------------------------------------------ per-rail views
 
     @Override
     public void orionChanged() {
-        OrionUi.onEdt(this::rebuildRails);
+        OrionUi.onEdt(() -> {
+            rebuildRails();
+            refreshHeader();
+        });
     }
 
     private void rebuildRails() {
-        statusLabel.setText("  " + mgr.describeConnection()
-                + (mgr.getLastError().isEmpty() ? "" : "   Last error: " + mgr.getLastError()));
         int rails = mgr.getRailCount();
         if (rails != builtRails) {
             railTabs.removeAll();
+            visionHolder.removeAll();
+            JPanel visions = new JPanel();
+            visions.setLayout(new javax.swing.BoxLayout(visions, javax.swing.BoxLayout.Y_AXIS));
             for (int r = 0; r < rails; r++) {
-                railTabs.addTab("Rail " + (r + 1), new RailPanel(r));
+                RailPanel rp = new RailPanel(r);
+                railTabs.addTab("Rail " + (r + 1), rp);
+                JPanel v = rp.visionSettings();
+                v.setBorder(BorderFactory.createTitledBorder("Rail " + (r + 1)
+                        + ": vision scan (large fiducials; machine coordinates, mm)"));
+                v.setAlignmentX(Component.LEFT_ALIGNMENT);
+                visions.add(v);
             }
             builtRails = rails;
             if (rails == 0) {
-                railTabs.addTab("Rails", new JLabel("  Not connected. Choose an interface and press Connect."));
+                JLabel hint = new JLabel("<html><body style='width:420px;padding:24px'><b>Not connected.</b><br>"
+                        + "Choose the interface in the Connection tab and press Connect (top right).</body></html>");
+                hint.setVerticalAlignment(javax.swing.SwingConstants.TOP);
+                railTabs.addTab("Rails", hint);
+                visions.add(new JLabel("  Connect first: the vision scan settings are per rail."));
             }
+            JPanel wrap = new JPanel(new BorderLayout());
+            wrap.add(visions, BorderLayout.NORTH);
+            visionHolder.add(wrap, BorderLayout.CENTER);
+            visionHolder.revalidate();
         }
         for (Component c : railTabs.getComponents()) {
             if (c instanceof RailPanel) {
@@ -382,7 +549,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         }
     }
 
-    /** One row of the table: a live unit and/or a configured feeder. */
+    /** One unit and/or one configured feeder. */
     static class Row {
         OrionDeviceInfo info;
         OrionFeeder feeder;
@@ -394,96 +561,71 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             }
             return feeder == null ? Double.MAX_VALUE : feeder.getLocation().getX();
         }
+
+        String key() {
+            return info != null ? "A" + info.address : "S" + (feeder == null ? "" : feeder.getSerial());
+        }
     }
 
     private class RailPanel extends JPanel {
         private final int rail;
         private final List<Row> rows = new ArrayList<>();
-        private final AbstractTableModel model = new AbstractTableModel() {
-            private final String[] cols = {"#", "Address", "Serial", "State", "Comp", "Width", "Feeder",
-                    "Slot X (mm)", "Pick X (mm)", "Note"};
-
-            @Override
-            public int getRowCount() {
-                return rows.size();
-            }
-
-            @Override
-            public int getColumnCount() {
-                return cols.length;
-            }
-
-            @Override
-            public String getColumnName(int c) {
-                return cols[c];
-            }
-
-            @Override
-            public Object getValueAt(int r, int c) {
-                Row row = rows.get(r);
-                OrionDeviceInfo d = row.info;
-                switch (c) {
-                    case 0:
-                        return row.feeder == null ? "" : String.valueOf(r + 1);
-                    case 1:
-                        return d == null ? "-" : d.address;
-                    case 2:
-                        return d == null ? row.feeder.getSerial() : d.serial;
-                    case 3:
-                        return d == null ? "MISSING" : d.state.toString();
-                    case 4:
-                        return d == null ? "" : d.componentId;
-                    case 5:
-                        return d == null ? "" : (d.tapeWidthMm == 0xFF ? "?" : d.tapeWidthMm + " mm");
-                    case 6:
-                        return row.feeder == null ? "(unbound)" : row.feeder.getName();
-                    case 7:
-                        return d == null || Double.isNaN(d.slotXMm) ? "" : String.format("%.1f", d.slotXMm);
-                    case 8:
-                        return row.feeder == null ? "" : String.format("%.2f", row.feeder.getLocation().getX());
-                    default:
-                        return d == null ? "configured feeder not found on this rail" : d.note;
-                }
-            }
-        };
-        private final JTable table = new JTable(model);
-        private final JLabel summary = new JLabel();
+        private final JPanel tiles = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 8));
+        private final JLabel counts = new JLabel();
+        private final JLabel verified = new JLabel();
+        private final JPanel pendingBar = new JPanel(new BorderLayout(8, 0));
+        private final JLabel pendingText = new JLabel();
+        private final JPanel details = new JPanel(new BorderLayout());
+        private final List<FeederTile> tileList = new ArrayList<>();
+        private String selectedKey;
+        private JButton createAll;
 
         RailPanel(int rail) {
             this.rail = rail;
             setLayout(new BorderLayout());
-            table.setAutoCreateRowSorter(false);
-            table.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
-                @Override
-                public Component getTableCellRendererComponent(JTable t, Object v, boolean sel,
-                        boolean focus, int r, int c) {
-                    Component comp = super.getTableCellRendererComponent(t, v, sel, focus, r, c);
-                    Row row = rows.get(r);
-                    if (!sel) {
-                        Color col = Color.BLACK;
-                        if (row.info == null) {
-                            col = Color.RED.darker();
-                        } else if (row.info.state == OrionDeviceInfo.State.CONFLICT) {
-                            col = Color.RED;
-                        } else if (row.info.state == OrionDeviceInfo.State.LOST) {
-                            col = Color.GRAY;
-                        } else if (row.info.state == OrionDeviceInfo.State.NO_SERIAL) {
-                            col = new Color(0xB36B00);
-                        } else if (row.feeder == null) {
-                            col = new Color(0x0050A0);
-                        }
-                        comp.setForeground(col);
-                    }
-                    return comp;
-                }
-            });
-            JPanel north = new JPanel(new BorderLayout());
-            north.add(summary, BorderLayout.NORTH);
-            north.add(visionSettings(), BorderLayout.CENTER);
+
+            JPanel north = new JPanel();
+            north.setLayout(new javax.swing.BoxLayout(north, javax.swing.BoxLayout.Y_AXIS));
+            north.setBorder(BorderFactory.createEmptyBorder(8, 10, 2, 10));
+            counts.setAlignmentX(Component.LEFT_ALIGNMENT);
+            verified.setAlignmentX(Component.LEFT_ALIGNMENT);
+            north.add(counts);
+            north.add(javax.swing.Box.createVerticalStrut(2));
+            north.add(verified);
+            pendingBar.setBackground(new Color(0xFFF4CE));
+            pendingBar.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(new Color(0xE8C860)), BorderFactory.createEmptyBorder(4, 8, 4, 8)));
+            pendingText.setForeground(new Color(0x5C4400));
+            pendingBar.add(pendingText, BorderLayout.CENTER);
+            JPanel pb = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+            pb.setOpaque(false);
+            pb.add(button("Scan now", () -> mgr.getMonitor().scanNow(rail)));
+            pb.add(button("Not now", () -> {
+                mgr.getMonitor().cancelAutoScan(rail);
+                refreshPending();
+            }));
+            pendingBar.add(pb, BorderLayout.EAST);
+            pendingBar.setAlignmentX(Component.LEFT_ALIGNMENT);
+            pendingBar.setVisible(false);
+            north.add(javax.swing.Box.createVerticalStrut(6));
+            north.add(pendingBar);
             add(north, BorderLayout.NORTH);
-            add(new JScrollPane(table), BorderLayout.CENTER);
-            add(buttons(), BorderLayout.SOUTH);
+
+            tiles.setBorder(BorderFactory.createEmptyBorder(2, 4, 4, 4));
+            JScrollPane sp = new JScrollPane(tiles);
+            sp.setBorder(BorderFactory.createMatteBorder(1, 0, 1, 0, javax.swing.UIManager.getColor(
+                    "Component.borderColor") == null ? Color.LIGHT_GRAY : javax.swing.UIManager.getColor(
+                            "Component.borderColor")));
+            sp.getVerticalScrollBar().setUnitIncrement(FeederTile.H);
+            add(sp, BorderLayout.CENTER);
+
+            details.setPreferredSize(new java.awt.Dimension(310, 100));
+            details.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+            add(details, BorderLayout.EAST);
+            add(railButtons(), BorderLayout.SOUTH);
         }
+
+        // ---- vision scan settings, teach, verify, create (shown in the "Rail vision scan" tab / actions)
 
         private javax.swing.JSpinner fiberX;
         private javax.swing.JSpinner fiberY;
@@ -606,112 +748,6 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             });
         }
 
-        private JPanel buttons() {
-            JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT));
-            p.add(btn("Verify rail (vision)", "Check each feeder's large fiducial, save small X shifts, "
-                    + "one rescan if something is missing", this::verifyRail));
-            p.add(btn("Locate selected here", "Camera is over the selected feeder's large fiducial: "
-                    + "measure and save its X", () -> {
-                        Row r = selected();
-                        if (r == null || r.feeder == null) {
-                            JOptionPane.showMessageDialog(this, "Select a row that has a feeder.");
-                            return;
-                        }
-                        OrionUi.run("Locate here", () -> mgr.locateHere(r.feeder));
-                    }));
-            p.add(btn("Scan rail", "Probe every address, then discover and address new units", () -> scan(rail)));
-            p.add(btn("Ping", "Ping the selected unit", () -> {
-                Row r = selected();
-                if (r != null && r.info != null) {
-                    final OrionBus b = mgr.getBus(rail);
-                    OrionUi.run("Ping", () -> {
-                        long ms = b.ping(r.info.address);
-                        mgr.addLog(rail, org.openpnp.machine.orion.protocol.OrionBusListener.Direction.INFO,
-                                ms < 0 ? "Ping address " + r.info.address + ": no reply"
-                                        : "Ping address " + r.info.address + ": " + ms + " ms");
-                    });
-                }
-            }));
-            JPanel q = new JPanel(new FlowLayout(FlowLayout.LEFT));
-            q.add(feederAction("Identify", f -> f.identify()));
-            q.add(feederAction("Feed", f -> f.feedOnce()));
-            q.add(feederAction("Unfeed", f -> f.unfeedOnce()));
-            q.add(feederAction("Peel", f -> f.peel(false)));
-            q.add(feederAction("Unpeel", f -> f.peel(true)));
-            q.add(btn("Create feeders for all unbound", "One OpenPnP feeder per unit that has none yet, "
-                    + "ordered by slot X", () -> OrionUi.run("Create feeders", () -> mgr.createFeedersForUnbound(rail),
-                            made -> JOptionPane.showMessageDialog(this, made.size() + " feeder(s) created. "
-                                    + "Assign a part to each in the Feeders tab."))));
-            q.add(btn("Create feeder", "Add an OrionFeeder for the selected unbound unit", this::createFeeder));
-            q.add(btn("Forget", "Drop the selected unit from the table", () -> {
-                Row r = selected();
-                if (r != null && r.info != null) {
-                    mgr.getBus(rail).forgetAddress(r.info.address);
-                    mgr.refresh();
-                }
-            }));
-            JButton power = new JButton("Rail power...");
-            power.addActionListener(e -> railPower());
-            q.add(power);
-            JPanel both = new JPanel(new java.awt.GridLayout(2, 1));
-            both.add(p);
-            both.add(q);
-            return both;
-        }
-
-        private JButton btn(String text, String tip, Runnable r) {
-            JButton b = new JButton(text);
-            b.setToolTipText(tip);
-            b.addActionListener(e -> r.run());
-            return b;
-        }
-
-        private JButton feederAction(String text, FeederThrunnable a) {
-            JButton b = new JButton(text);
-            b.addActionListener(e -> {
-                Row r = selected();
-                if (r == null) {
-                    return;
-                }
-                if (r.feeder != null) {
-                    OrionUi.run(text, () -> a.run(r.feeder));
-                } else if (r.info != null) {
-                    // Unbound unit: drive it through a temporary, unregistered feeder object.
-                    OrionFeeder tmp = new OrionFeeder();
-                    tmp.setName("unit " + r.info.address);
-                    tmp.setSerial(r.info.serial);
-                    tmp.setRail(rail);
-                    tmp.setPitchMm(0);
-                    OrionUi.run(text, () -> a.run(tmp));
-                }
-            });
-            return b;
-        }
-
-        OrionFeeder feederForSelected() {
-            Row r = selected();
-            if (r == null) {
-                return null;
-            }
-            if (r.feeder != null) {
-                return r.feeder;
-            }
-            if (r.info == null) {
-                return null;
-            }
-            OrionFeeder tmp = new OrionFeeder();
-            tmp.setName("unit " + r.info.address);
-            tmp.setSerial(r.info.serial);
-            tmp.setRail(rail);
-            tmp.setPitchMm(0);
-            return tmp;
-        }
-
-        private Row selected() {
-            int i = table.getSelectedRow();
-            return i < 0 || i >= rows.size() ? null : rows.get(i);
-        }
-
         private void createFeeder() {
             Row r = selected();
             if (r == null || r.info == null || r.feeder != null) {
@@ -734,19 +770,267 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             }
         }
 
-        private void railPower() {
-            Object[] opts = {"Power ON", "Power OFF", "Cancel"};
-            int c = JOptionPane.showOptionDialog(this, "Rail " + (rail + 1)
-                    + " supply (host board only; has no effect on a plain USB-RS485 adapter).",
-                    "Rail power", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null,
-                    opts, opts[2]);
-            if (c == 0 || c == 1) {
-                OrionUi.run("Rail power", () -> {
-                    boolean ok = mgr.getTransport().setRailPower(rail, c == 0);
-                    if (!ok) {
-                        throw new Exception("This interface cannot switch rail power.");
-                    }
+
+        private JPanel railButtons() {
+            JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 6));
+            p.add(btn("Scan rail", "Probe every address, then discover and address new units", () -> scan(rail)));
+            p.add(btn("Verify rail by vision", "Check each feeder's large fiducial, save small X shifts, "
+                    + "one rescan if something is missing", this::verifyRail));
+            createAll = btn("Create feeders for all unbound", "One OpenPnP feeder per unit that has none yet, "
+                    + "ordered by slot X", () -> OrionUi.run("Create feeders", () -> mgr.createFeedersForUnbound(rail),
+                            made -> JOptionPane.showMessageDialog(this, made.size() + " feeder(s) created. "
+                                    + "Assign a part to each in the Feeders tab.")));
+            p.add(createAll);
+            JButton power = new JButton("Rail power...");
+            power.setToolTipText("Host board only: switch this rail's supply");
+            power.addActionListener(e -> railPower());
+            p.add(power);
+            JLabel legend = new JLabel("   ");
+            legend.setIcon(new OrionLed(OrionLed.GREEN, 9));
+            legend.setText("answers    ");
+            JLabel l2 = new JLabel("no answer    ");
+            l2.setIcon(new OrionLed(OrionLed.RED, 9));
+            JLabel l3 = new JLabel("needs a look    ");
+            l3.setIcon(new OrionLed(OrionLed.AMBER, 9));
+            JLabel l4 = new JLabel("no OpenPnP feeder yet");
+            l4.setIcon(new javax.swing.Icon() {
+                public void paintIcon(Component c, java.awt.Graphics g, int x, int y) {
+                    g.setColor(new Color(0x1A73E8));
+                    g.fillRoundRect(x, y + 1, 8, 8, 3, 3);
+                }
+
+                public int getIconWidth() {
+                    return 10;
+                }
+
+                public int getIconHeight() {
+                    return 10;
+                }
+            });
+            JPanel leg = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 6));
+            for (JLabel l : new JLabel[] {legend, l2, l3, l4}) {
+                l.setForeground(javax.swing.UIManager.getColor("Label.disabledForeground"));
+                leg.add(l);
+            }
+            JPanel out = new JPanel(new BorderLayout());
+            out.add(p, BorderLayout.WEST);
+            out.add(leg, BorderLayout.CENTER);
+            return out;
+        }
+
+        private JButton btn(String text, String tip, Runnable r) {
+            JButton b = new JButton(text);
+            b.setToolTipText(tip);
+            b.addActionListener(e -> r.run());
+            return b;
+        }
+
+        private JButton feederAction(String text, String tip, FeederThrunnable a) {
+            JButton b = btn(text, tip, () -> {
+                Row r = selected();
+                if (r == null) {
+                    return;
+                }
+                OrionFeeder f = feederForSelected();
+                if (f != null) {
+                    OrionUi.run(text, () -> a.run(f));
+                }
+            });
+            return b;
+        }
+
+        OrionFeeder feederForSelected() {
+            Row r = selected();
+            if (r == null) {
+                return null;
+            }
+            if (r.feeder != null) {
+                return r.feeder;
+            }
+            if (r.info == null) {
+                return null;
+            }
+            // Unbound unit: drive it through a temporary, unregistered feeder object.
+            OrionFeeder tmp = new OrionFeeder();
+            tmp.setName("unit " + r.info.address);
+            tmp.setSerial(r.info.serial);
+            tmp.setRail(rail);
+            tmp.setPitchMm(0);
+            return tmp;
+        }
+
+        private Row selected() {
+            if (selectedKey == null) {
+                return null;
+            }
+            for (Row r : rows) {
+                if (selectedKey.equals(r.key())) {
+                    return r;
+                }
+            }
+            return null;
+        }
+
+        private void select(String key) {
+            selectedKey = key;
+            for (FeederTile t : tileList) {
+                t.setSelected(t.row.key().equals(key));
+            }
+            rebuildDetails();
+        }
+
+        // ---- details panel for the selected tile
+
+        private void rebuildDetails() {
+            details.removeAll();
+            Row r = selected();
+            JPanel box = new JPanel();
+            box.setLayout(new javax.swing.BoxLayout(box, javax.swing.BoxLayout.Y_AXIS));
+            box.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+            if (r == null) {
+                JLabel hint = new JLabel("<html><body style='width:240px;color:gray'>Click a feeder tile to see its "
+                        + "details and to feed, peel or identify it.<br><br>Double click a tile to blink its LED.</body></html>");
+                hint.setVerticalAlignment(javax.swing.SwingConstants.TOP);
+                box.add(hint);
+            } else {
+                OrionDeviceInfo d = r.info;
+                JLabel title = new JLabel(d == null ? "Missing feeder" : "Feeder #" + d.address);
+                title.setFont(title.getFont().deriveFont(java.awt.Font.BOLD, title.getFont().getSize2D() + 4f));
+                FeederTile probe = new FeederTile(r, () -> {
+                }, () -> {
                 });
+                title.setIcon(new OrionLed(probe.ledColor(), 12));
+                title.setIconTextGap(8);
+                title.setAlignmentX(Component.LEFT_ALIGNMENT);
+                box.add(title);
+                JLabel st = new JLabel(FeederTile.stateText(r));
+                st.setForeground(javax.swing.UIManager.getColor("Label.disabledForeground"));
+                st.setAlignmentX(Component.LEFT_ALIGNMENT);
+                box.add(st);
+                box.add(javax.swing.Box.createVerticalStrut(8));
+                JPanel g = new JPanel(new java.awt.GridBagLayout());
+                g.setAlignmentX(Component.LEFT_ALIGNMENT);
+                int row = 0;
+                row = kv(g, row, "Component", d == null ? "" : (d.componentId == 0xFFFF ? "not set"
+                        : String.valueOf(d.componentId) + partName(d.componentId)));
+                row = kv(g, row, "OpenPnP feeder", r.feeder == null ? (d == null ? "" : "none yet") : r.feeder.getName());
+                row = kv(g, row, "Tape width", d == null ? "" : (d.tapeWidthMm == 0xFF ? "unknown" : d.tapeWidthMm + " mm"));
+                row = kv(g, row, "Slot X on unit", d == null || Double.isNaN(d.slotXMm) ? "not set"
+                        : String.format("%.1f mm", d.slotXMm));
+                row = kv(g, row, "Pick X", r.feeder == null ? "" : String.format("%.2f mm", r.feeder.getLocation().getX()));
+                row = kv(g, row, "Last answer", d == null ? "" : (d.state == OrionDeviceInfo.State.LOST
+                        ? "none for " + Math.max(0, (System.currentTimeMillis() - d.lastSeenMs) / 1000) + " s"
+                        : (d.lastPingMs >= 0 ? d.lastPingMs + " ms" : "not pinged yet")));
+                row = kv(g, row, "Serial", d == null ? (r.feeder == null ? "" : r.feeder.getSerial()) : d.serial);
+                if (d != null && d.note != null && !d.note.isEmpty()) {
+                    row = kv(g, row, "Note", d.note);
+                }
+                box.add(g);
+                box.add(javax.swing.Box.createVerticalStrut(10));
+
+                boolean live = d != null && d.state != OrionDeviceInfo.State.LOST;
+                JPanel acts = new JPanel(new java.awt.GridLayout(0, 2, 6, 6));
+                acts.setAlignmentX(Component.LEFT_ALIGNMENT);
+                acts.add(feederAction("Identify", "Blink the unit's LEDs", f -> f.identify()));
+                acts.add(btn("Ping", "Ping this unit once", () -> {
+                    if (d != null) {
+                        final OrionBus b = mgr.getBus(rail);
+                        OrionUi.run("Ping", () -> {
+                            long ms = b.ping(d.address);
+                            mgr.addLog(rail, org.openpnp.machine.orion.protocol.OrionBusListener.Direction.INFO,
+                                    ms < 0 ? "Ping address " + d.address + ": no reply"
+                                            : "Ping address " + d.address + ": " + ms + " ms");
+                            mgr.refresh();
+                        });
+                    }
+                }));
+                acts.add(feederAction("Feed", "Advance the tape one pitch", f -> f.feedOnce()));
+                acts.add(feederAction("Unfeed", "Move the tape back one pitch", f -> f.unfeedOnce()));
+                acts.add(feederAction("Peel", "Peel the cover tape", f -> f.peel(false)));
+                acts.add(feederAction("Unpeel", "Run the peel motor backwards", f -> f.peel(true)));
+                acts.add(btn("Locate here", "The camera is over this feeder's large fiducial: measure and save its X",
+                        () -> {
+                            if (r.feeder == null) {
+                                JOptionPane.showMessageDialog(this, "This unit has no OpenPnP feeder yet. Create one first.");
+                                return;
+                            }
+                            OrionUi.run("Locate here", () -> mgr.locateHere(r.feeder));
+                        }));
+                acts.add(btn("Create feeder", "Add an OpenPnP feeder for this unit", this::createFeeder));
+                for (Component c : acts.getComponents()) {
+                    c.setEnabled(live || c instanceof JButton && ((JButton) c).getText().equals("Ping"));
+                }
+                ((JButton) acts.getComponent(7)).setEnabled(d != null && r.feeder == null);
+                ((JButton) acts.getComponent(6)).setEnabled(live && r.feeder != null);
+                box.add(acts);
+                box.add(javax.swing.Box.createVerticalStrut(8));
+                JButton forget = btn("Forget this unit", "Drop it from the table (it comes back if it answers again)",
+                        () -> {
+                            if (d != null) {
+                                mgr.getBus(rail).forgetAddress(d.address);
+                            }
+                            selectedKey = null;
+                            mgr.refresh();
+                        });
+                forget.setEnabled(d != null);
+                forget.setAlignmentX(Component.LEFT_ALIGNMENT);
+                box.add(forget);
+            }
+            JPanel wrap = new JPanel(new BorderLayout());
+            wrap.setBorder(BorderFactory.createMatteBorder(0, 1, 0, 0, javax.swing.UIManager.getColor(
+                    "Component.borderColor") == null ? Color.LIGHT_GRAY : javax.swing.UIManager.getColor(
+                            "Component.borderColor")));
+            wrap.add(box, BorderLayout.NORTH);
+            details.add(wrap, BorderLayout.CENTER);
+            details.revalidate();
+            details.repaint();
+        }
+
+        private String partName(int comp) {
+            String part = mgr.getSettings().partFor(comp);
+            return part == null || part.isEmpty() ? "" : "  (" + part + ")";
+        }
+
+        private int kv(JPanel g, int row, String k, String v) {
+            java.awt.GridBagConstraints a = new java.awt.GridBagConstraints();
+            a.gridx = 0;
+            a.gridy = row;
+            a.anchor = java.awt.GridBagConstraints.NORTHWEST;
+            a.insets = new java.awt.Insets(1, 0, 1, 10);
+            JLabel kl = new JLabel(k);
+            kl.setForeground(javax.swing.UIManager.getColor("Label.disabledForeground"));
+            g.add(kl, a);
+            java.awt.GridBagConstraints b = new java.awt.GridBagConstraints();
+            b.gridx = 1;
+            b.gridy = row;
+            b.weightx = 1;
+            b.anchor = java.awt.GridBagConstraints.NORTHWEST;
+            b.insets = new java.awt.Insets(1, 0, 1, 0);
+            JLabel vl = new JLabel("<html><body style='width:170px'>" + v.replace("<", "&lt;") + "</body></html>");
+            if (k.equals("Serial")) {
+                vl.setText("<html><body style='width:170px;font-size:9px'>" + v + "</body></html>");
+            }
+            g.add(vl, b);
+            return row + 1;
+        }
+
+        // ---- the pending "found a new feeder" bar
+
+        void refreshPending() {
+            org.openpnp.machine.orion.OrionBusMonitor.Pending p = mgr.getMonitor().getPending(rail);
+            boolean show = p != null;
+            if (show) {
+                long left = p.scanAtMs == Long.MAX_VALUE ? -1 : Math.max(0, (p.scanAtMs - System.currentTimeMillis()) / 1000);
+                pendingText.setText(p.returning
+                        ? p.count + " feeder(s) restarted and are being restored"
+                                + (left >= 0 ? " in " + left + " s" : "")
+                        : "<html>Found <b>" + p.count + " new feeder(s)</b> on this rail. "
+                                + (left >= 0 ? "Scanning automatically in <b>" + left + " s</b> unless more are plugged in."
+                                        : "Automatic scan cancelled, use Scan rail.") + "</html>");
+            }
+            if (pendingBar.isVisible() != show) {
+                pendingBar.setVisible(show);
+                revalidate();
             }
         }
 
@@ -781,31 +1065,64 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                 }
             }
             rows.sort(Comparator.comparingDouble(Row::x));
+
+            tiles.removeAll();
+            tileList.clear();
             int online = 0;
             int unbound = 0;
-            int problems = 0;
+            int silent = 0;
+            int attention = 0;
             for (Row r : rows) {
+                final String key = r.key();
+                FeederTile t = new FeederTile(r, () -> select(key), () -> {
+                    select(key);
+                    OrionFeeder f = feederForSelected();
+                    if (f != null && r.info != null && r.info.state != OrionDeviceInfo.State.LOST) {
+                        OrionUi.run("Identify", () -> f.identify());
+                    }
+                });
+                t.setSelected(key.equals(selectedKey));
+                tiles.add(t);
+                tileList.add(t);
                 if (r.info != null && r.info.state == OrionDeviceInfo.State.ONLINE) {
                     online++;
+                } else if (r.info == null || r.info.state == OrionDeviceInfo.State.LOST) {
+                    silent++;
+                } else {
+                    attention++;
                 }
                 if (r.info != null && r.feeder == null) {
                     unbound++;
                 }
-                if (r.info == null || r.info.state == OrionDeviceInfo.State.CONFLICT
-                        || r.info.state == OrionDeviceInfo.State.LOST) {
-                    problems++;
-                }
             }
+            if (rows.isEmpty()) {
+                JLabel none = new JLabel("<html><body style='width:420px;color:gray'>No feeder on this rail yet. Plug "
+                        + "one in: it is announced here within a few seconds and added automatically, or press "
+                        + "<b>Scan rail</b>.</body></html>");
+                tiles.add(none);
+            }
+            tiles.revalidate();
+            tiles.repaint();
+
+            counts.setText(String.format("<html><b>%d feeder(s)</b> &nbsp;·&nbsp; %d answering &nbsp;·&nbsp; "
+                    + "<span style='color:%s'>%d silent</span> &nbsp;·&nbsp; %d need a look &nbsp;·&nbsp; "
+                    + "%d without OpenPnP feeder</html>", rows.size(), online, silent > 0 ? "#D93025" : "gray",
+                    silent, attention, unbound));
             String problem = mgr.railCheckProblem(rail);
             org.openpnp.machine.orion.OrionManager.RailCheck check = mgr.getRailCheck(rail);
-            String verified = problem == null && check != null
-                    ? "  VERIFIED by vision at " + new java.text.SimpleDateFormat("HH:mm:ss").format(
-                            new java.util.Date(check.time)) + "."
-                    : "  NOT VERIFIED: " + problem;
-            summary.setForeground(problem == null ? new Color(0x006400) : Color.RED.darker());
-            summary.setText(String.format("<html><body style='width:1000px'>%d unit(s), %d online, %d unbound, "
-                    + "%d with problems.%s</body></html>", rows.size(), online, unbound, problems, verified));
-            model.fireTableDataChanged();
+            boolean ok = problem == null && check != null;
+            verified.setIcon(new OrionLed(ok ? OrionLed.GREEN : OrionLed.AMBER, 9));
+            verified.setIconTextGap(6);
+            verified.setText(ok ? "Verified by vision at " + new java.text.SimpleDateFormat("HH:mm:ss").format(
+                    new java.util.Date(check.time))
+                    : "<html><body style='width:560px'>Not verified by vision: " + (problem == null ? "" : problem) + "</body></html>");
+            createAll.setText(unbound > 0 ? "Create feeders for " + unbound + " unbound" : "Create feeders for all unbound");
+            createAll.setEnabled(unbound > 0);
+            refreshPending();
+            if (selectedKey != null && selected() == null) {
+                selectedKey = null;
+            }
+            rebuildDetails();
         }
 
         private boolean seenElsewhere(OrionFeeder f) {
@@ -815,6 +1132,22 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                 }
             }
             return false;
+        }
+
+        private void railPower() {
+            Object[] opts = {"Power ON", "Power OFF", "Cancel"};
+            int c = JOptionPane.showOptionDialog(this, "Rail " + (rail + 1)
+                    + " supply (host board only; has no effect on a plain USB-RS485 adapter).",
+                    "Rail power", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null,
+                    opts, opts[2]);
+            if (c == 0 || c == 1) {
+                OrionUi.run("Rail power", () -> {
+                    boolean ok = mgr.setRailPower(rail, c == 0);
+                    if (!ok) {
+                        throw new Exception("This interface cannot switch rail power.");
+                    }
+                });
+            }
         }
     }
 

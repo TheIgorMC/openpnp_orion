@@ -90,6 +90,43 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
     private final javax.swing.JCheckBox followCb = new javax.swing.JCheckBox(
             "Shift pick X when the unit's slot X changes");
 
+    /** A titled section that can be folded away; the header shows what it is and whether it is open. */
+    private static class Section extends JPanel {
+        private final JPanel body;
+        private final JButton head = new JButton();
+        private final String title;
+
+        Section(String title, JPanel body, boolean open) {
+            super(new java.awt.BorderLayout());
+            this.title = title;
+            this.body = body;
+            body.setBorder(BorderFactory.createEmptyBorder(2, 4, 4, 4));
+            head.setHorizontalAlignment(javax.swing.SwingConstants.LEFT);
+            head.setBorderPainted(false);
+            head.setContentAreaFilled(false);
+            head.setFocusPainted(false);
+            head.setFont(head.getFont().deriveFont(java.awt.Font.BOLD));
+            head.addActionListener(e -> setOpen(!body.isVisible()));
+            add(head, java.awt.BorderLayout.NORTH);
+            add(body, java.awt.BorderLayout.CENTER);
+            setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, javax.swing.UIManager.getColor(
+                    "Component.borderColor") == null ? java.awt.Color.LIGHT_GRAY : javax.swing.UIManager.getColor(
+                            "Component.borderColor")));
+            setOpen(open);
+        }
+
+        void setOpen(boolean open) {
+            body.setVisible(open);
+            head.setText((open ? "\u25BE  " : "\u25B8  ") + title);
+            revalidate();
+            repaint();
+            OrionUi.compact(this);
+        }
+    }
+
+    private Section visionSection;
+    private Section tapeSection;
+
     public OrionFeederWizard(OrionFeeder feeder) {
         this.feeder = feeder;
         contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
@@ -113,6 +150,39 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         OrionUi.row(hw, 1, "State", stateLabel);
         OrionUi.row(hw, 2, "Unit reports", unitLabel);
         contentPanel.add(hw);
+
+        // ---- live controls
+        JPanel live = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        live.add(button("Identify", "Blink the unit's white LED", () -> feeder.identify()));
+        live.add(button("Feed", "Advance one pitch (with coupled peel)", () -> feeder.feedOnce()));
+        live.add(button("Unfeed", "Back up one pitch (peel reverses first)", () -> feeder.unfeedOnce()));
+        live.add(button("Peel", "Peel motor forward for the calibrated time", () -> feeder.peel(false)));
+        live.add(button("Unpeel", "Peel motor in reverse for the calibrated time", () -> feeder.peel(true)));
+        live.add(button("Stop", "Brake both motors", () -> feeder.stop()));
+        JPanel liveAll = new JPanel();
+        liveAll.setLayout(new BoxLayout(liveAll, BoxLayout.Y_AXIS));
+        live.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+        liveAll.add(live);
+        JPanel jog = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        jog.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+        live = jog;
+        live.add(button("Jog -1 mm", null, () -> feeder.jogTenthsMm(-10)));
+        live.add(button("Jog +1 mm", null, () -> feeder.jogTenthsMm(10)));
+        live.add(button("Jog -0.1", null, () -> feeder.jogTenthsMm(-1)));
+        live.add(button("Jog +0.1", null, () -> feeder.jogTenthsMm(1)));
+        live.add(button("Zero here", "Capture the current sprocket position as the tape zero",
+                () -> feeder.zeroHere()));
+        JButton read = new JButton("Read from unit");
+        read.setToolTipText("Load pitch / peel settings from the unit into this form's feeder");
+        read.addActionListener(e -> OrionUi.run("Read settings", () -> feeder.readSettingsFromUnit(),
+                summary -> {
+                    unitLabel.setText(summary);
+                    loadFromModel();
+                }));
+        live.add(read);
+        liveAll.add(live);
+        liveAll.setBorder(BorderFactory.createTitledBorder("Live control (acts on the unit at once)"));
+        contentPanel.add(liveAll);
 
         // ---- settings
         JPanel cfg = OrionUi.grid();
@@ -143,17 +213,22 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         contentPanel.add(loc);
 
         // ---- slot position
-        JPanel slot = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        JPanel slot = new JPanel();
+        slot.setLayout(new BoxLayout(slot, BoxLayout.Y_AXIS));
         slot.setBorder(BorderFactory.createTitledBorder("Slot position X stored on the unit (mm along the rail)"));
-        slot.add(slotTf);
-        slot.add(slotLabel);
+        JPanel slotRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        slotRow.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+        JPanel slotRow2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        slotRow2.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+        slotRow.add(slotTf);
+        slotRow.add(slotLabel);
         JButton slotRead = new JButton("Read");
         slotRead.addActionListener(e -> OrionUi.run("Read slot position", () -> feeder.readSlotPosition(),
                 v -> {
                     slotTf.setText(Double.isNaN(v) ? "" : String.format("%.1f", v));
                     refreshState();
                 }));
-        slot.add(slotRead);
+        slotRow.add(slotRead);
         JButton slotWrite = new JButton("Write to unit");
         slotWrite.addActionListener(e -> {
             double v;
@@ -166,12 +241,14 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
             final double mm = v;
             OrionUi.run("Write slot position", () -> feeder.writeSlotPosition(mm));
         });
-        slot.add(slotWrite);
+        slotRow.add(slotWrite);
         JButton teach = new JButton("Teach (current slot = taught)");
         teach.setToolTipText("Remember the unit's slot X as the one the pick location was taught at");
         teach.addActionListener(e -> OrionUi.run("Teach slot position", () -> feeder.teachSlotPosition()));
-        slot.add(teach);
-        slot.add(followCb);
+        slotRow.add(teach);
+        slotRow2.add(followCb);
+        slot.add(slotRow);
+        slot.add(slotRow2);
         contentPanel.add(slot);
 
         // ---- vision
@@ -209,7 +286,9 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         vb.add(commit);
         vb.add(visionResult);
         OrionUi.row(vis, 5, "", vb);
-        contentPanel.add(vis);
+        vis.setBorder(null);
+        visionSection = new Section("Vision: fine X position from a fiducial", vis, false);
+        contentPanel.add(visionSection);
 
         // ---- tape position from a sprocket hole
         JPanel hole = OrionUi.grid();
@@ -252,37 +331,12 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         OrionUi.row(hole, 8, "", movingCb);
         OrionUi.row(hole, 9, "", repickCb);
         OrionUi.row(hole, 10, "", prefeedCb);
-        OrionUi.row(hole, 11, "", OrionUi.line(jogCb, new JLabel("if off by more than (mm):"), jogMinTf));
-        contentPanel.add(hole);
+        OrionUi.row(hole, 11, "", jogCb);
+        OrionUi.row(hole, 12, "   ...when the pocket is off by more than (mm)", jogMinTf);
+        hole.setBorder(null);
+        tapeSection = new Section("Vision: tape / pocket check", hole, false);
+        contentPanel.add(tapeSection);
 
-        // ---- live controls
-        JPanel live = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
-        live.setBorder(BorderFactory.createTitledBorder("Live control"));
-        live.add(button("Identify", "Blink the unit's white LED", () -> feeder.identify()));
-        live.add(button("Feed", "Advance one pitch (with coupled peel)", () -> feeder.feedOnce()));
-        live.add(button("Unfeed", "Back up one pitch (peel reverses first)", () -> feeder.unfeedOnce()));
-        live.add(button("Peel", "Peel motor forward for the calibrated time", () -> feeder.peel(false)));
-        live.add(button("Unpeel", "Peel motor in reverse for the calibrated time", () -> feeder.peel(true)));
-        live.add(button("Stop", "Brake both motors", () -> feeder.stop()));
-        contentPanel.add(live);
-        JPanel jog = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
-        jog.setBorder(BorderFactory.createTitledBorder("Sprocket jog / tape zero"));
-        live = jog;
-        live.add(button("Jog -1 mm", null, () -> feeder.jogTenthsMm(-10)));
-        live.add(button("Jog +1 mm", null, () -> feeder.jogTenthsMm(10)));
-        live.add(button("Jog -0.1", null, () -> feeder.jogTenthsMm(-1)));
-        live.add(button("Jog +0.1", null, () -> feeder.jogTenthsMm(1)));
-        live.add(button("Zero here", "Capture the current sprocket position as the tape zero",
-                () -> feeder.zeroHere()));
-        JButton read = new JButton("Read from unit");
-        read.setToolTipText("Load pitch / peel settings from the unit into this form's feeder");
-        read.addActionListener(e -> OrionUi.run("Read settings", () -> feeder.readSettingsFromUnit(),
-                summary -> {
-                    unitLabel.setText(summary);
-                    loadFromModel();
-                }));
-        live.add(read);
-        contentPanel.add(live);
         for (java.awt.Component c : contentPanel.getComponents()) {
             OrionUi.compact((javax.swing.JComponent) c);
         }
@@ -304,6 +358,9 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         peelRateTf.getDocument().addDocumentListener(dl);
         OrionManager.get().addListener(this);
         refreshState();
+        // Fold away what is switched off; the headers open them again.
+        visionSection.setOpen(feeder.getVisionMode() != OrionFeeder.VisionMode.Off);
+        tapeSection.setOpen(feeder.getHoleMode() != OrionFeeder.HoleMode.Off);
     }
 
     private JButton button(String text, String tip, org.openpnp.util.UiUtils.Thrunnable action) {
