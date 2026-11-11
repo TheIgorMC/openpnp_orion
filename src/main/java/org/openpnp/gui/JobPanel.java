@@ -168,6 +168,11 @@ public class JobPanel extends JPanel {
     private JobProcessor jobProcessor;
     
     private State state = State.Stopped;
+
+    /** True while a job is running, pausing, paused or stopping (anything but stopped). */
+    public boolean isJobActive() {
+        return state != State.Stopped;
+    }
     
     public JobPanel(Configuration configuration, MainFrame frame) {
         this.configuration = configuration;

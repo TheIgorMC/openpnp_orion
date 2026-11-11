@@ -26,6 +26,10 @@ public class OrionDeviceInfo {
     public State state = State.ONLINE;
     public long lastSeenMs;
     public String note = "";
+    /** Consecutive missed monitor pings; reset by any reply. */
+    public int missedPings;
+    /** Round trip of the last monitor ping in ms, -1 = none yet. */
+    public long lastPingMs = -1;
 
     public OrionDeviceInfo copy() {
         OrionDeviceInfo c = new OrionDeviceInfo();
@@ -39,6 +43,8 @@ public class OrionDeviceInfo {
         c.state = state;
         c.lastSeenMs = lastSeenMs;
         c.note = note;
+        c.missedPings = missedPings;
+        c.lastPingMs = lastPingMs;
         return c;
     }
 

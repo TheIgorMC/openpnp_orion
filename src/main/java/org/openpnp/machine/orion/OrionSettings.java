@@ -59,6 +59,42 @@ public class OrionSettings {
     @Attribute(required = false)
     private boolean autoCreateFeeders = true;
 
+    /** Background pinging of all known feeders and watching for new ones. */
+    @Attribute(required = false)
+    private boolean monitorEnabled = true;
+
+    /** Seconds between two ping sweeps of the whole rail. */
+    @Attribute(required = false)
+    private int monitorIntervalS = 3;
+
+    /** Seconds to wait after the last new feeder showed up before the rail is scanned automatically. */
+    @Attribute(required = false)
+    private int autoScanDelayS = 30;
+
+    public boolean isMonitorEnabled() {
+        return monitorEnabled;
+    }
+
+    public void setMonitorEnabled(boolean v) {
+        monitorEnabled = v;
+    }
+
+    public int getMonitorIntervalS() {
+        return Math.max(1, monitorIntervalS);
+    }
+
+    public void setMonitorIntervalS(int v) {
+        monitorIntervalS = Math.max(1, v);
+    }
+
+    public int getAutoScanDelayS() {
+        return Math.max(5, autoScanDelayS);
+    }
+
+    public void setAutoScanDelayS(int v) {
+        autoScanDelayS = Math.max(5, v);
+    }
+
     /** The large fiducial (middle one of each feeder's set) used to find feeders on the rail. */
     @Attribute(required = false)
     private String largeFiducialPartId = "";

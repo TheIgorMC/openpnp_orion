@@ -28,6 +28,8 @@ public class OrionBus {
     private final Map<Integer, OrionDeviceInfo> devices = new TreeMap<>();
 
     private boolean quiet;
+    /** Suppress all traffic logging (monitor pings every few seconds would drown the log). */
+    private boolean silent;
     private int retries = 2;
     private int maxAddress = 40;
 
@@ -75,7 +77,7 @@ public class OrionBus {
     /** Send a frame and return every valid reply. Single attempt, no retry. */
     public synchronized List<OrionFrame> exchange(OrionFrame request, int timeoutMs, int collectMs)
             throws OrionException {
-        if (!quiet) {
+        if (!quiet && !silent) {
             log(OrionBusListener.Direction.TX,
                     OrionCommand.name(request.command) + " " + request);
         }
@@ -86,8 +88,10 @@ public class OrionBus {
             log(OrionBusListener.Direction.ERROR, e.getMessage());
             throw e;
         }
-        for (OrionFrame r : replies) {
-            log(OrionBusListener.Direction.RX, OrionCommand.name(r.command) + " " + r);
+        if (!silent) {
+            for (OrionFrame r : replies) {
+                log(OrionBusListener.Direction.RX, OrionCommand.name(r.command) + " " + r);
+            }
         }
         return replies;
     }
@@ -462,6 +466,95 @@ public class OrionBus {
             return Math.max(0, (System.nanoTime() - t0) / 1_000_000);
         } catch (OrionException e) {
             return -1;
+        }
+    }
+
+    /**
+     * Background health check of one known address: a single silent PING, no retry. Updates the
+     * device table (miss counter, round trip, state). A unit is only declared lost after
+     * {@code lossThreshold} consecutive misses so one corrupted frame does not flap the LED.
+     *
+     * @return true if the unit's state changed (went ONLINE or LOST)
+     */
+    public synchronized boolean monitorPing(int address, int lossThreshold) throws OrionException {
+        OrionDeviceInfo d = devices.get(address);
+        if (d == null) {
+            return false;
+        }
+        OrionDeviceInfo.State before = d.state;
+        boolean wasSilent = silent;
+        silent = true;
+        long t0 = System.nanoTime();
+        boolean ok = false;
+        try {
+            List<OrionFrame> replies = exchange(new OrionFrame(address, OrionCommand.PING), 60, 0);
+            for (OrionFrame r : replies) {
+                if (r.command == OrionCommand.PONG && r.address == address) {
+                    ok = true;
+                    break;
+                }
+            }
+        } finally {
+            silent = wasSilent;
+        }
+        d = devices.get(address);
+        if (d == null) {
+            return false;
+        }
+        if (ok) {
+            d.missedPings = 0;
+            d.lastPingMs = Math.max(0, (System.nanoTime() - t0) / 1_000_000);
+            touch(address);
+            if (before == OrionDeviceInfo.State.LOST) {
+                d.note = "";
+                log(OrionBusListener.Direction.INFO, "Address " + address + " is back");
+            }
+        } else {
+            d.missedPings++;
+            d.lastPingMs = -1;
+            if (d.missedPings >= Math.max(1, lossThreshold)) {
+                markLost(address);
+            }
+        }
+        return d.state != before;
+    }
+
+    /**
+     * Broadcast DISCOVER without assigning anything and count the unassigned units that answer
+     * (distinct nonces). Used by the monitor to notice a freshly plugged feeder.
+     */
+    public synchronized int peekUnassigned() throws OrionException {
+        boolean wasSilent = silent;
+        silent = true;
+        try {
+            List<OrionFrame> replies = exchange(new OrionFrame(OrionCommand.ADDR_BROADCAST,
+                    OrionCommand.DISCOVER), DISCOVER_WINDOW_MS, DISCOVER_WINDOW_MS);
+            Set<Integer> nonces = new HashSet<>();
+            for (OrionFrame r : replies) {
+                if (r.command == OrionCommand.DISCOVER_HERE && r.payload.length >= 5) {
+                    nonces.add(r.u16(0));
+                }
+            }
+            return nonces.size();
+        } finally {
+            silent = wasSilent;
+        }
+    }
+
+    /** After the port was reopened: everything is unconfirmed until it answers a ping again. */
+    public synchronized void noteBusReset() {
+        for (OrionDeviceInfo d : devices.values()) {
+            d.missedPings = 0;
+        }
+    }
+
+    /** The adapter itself is gone: no unit can be reached, show them all as lost with the reason. */
+    public synchronized void markAllLost(String why) {
+        for (OrionDeviceInfo d : devices.values()) {
+            if (d.state != OrionDeviceInfo.State.LOST) {
+                d.state = OrionDeviceInfo.State.LOST;
+                d.note = why;
+            }
         }
     }
 

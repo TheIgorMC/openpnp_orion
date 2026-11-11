@@ -62,6 +62,22 @@ public class OrionManager {
         }
     }
 
+    /** A short message for the user ("found a new feeder", "feeder lost", "bus was reset"). */
+    public static class Notice {
+        public enum Kind { FOUND, ADDED, LOST, BACK, RESET, ERROR }
+
+        public final long time = System.currentTimeMillis();
+        public final Kind kind;
+        public final int rail;
+        public final String text;
+
+        public Notice(Kind kind, int rail, String text) {
+            this.kind = kind;
+            this.rail = rail;
+            this.text = text;
+        }
+    }
+
     private static OrionManager instance;
 
     public static synchronized OrionManager get() {
@@ -75,7 +91,34 @@ public class OrionManager {
     private final List<LogEntry> log = new ArrayList<>();
     private OrionTransport transport;
     private final List<OrionBus> buses = new ArrayList<>();
-    private String lastError = "";
+    private volatile String lastError = "";
+    /** True after the user pressed Disconnect: no automatic reconnect then. */
+    private boolean userDisconnected;
+    private final boolean[] userPowerOff = new boolean[8];
+    private final List<java.util.function.Consumer<Notice>> noticeListeners = new CopyOnWriteArrayList<>();
+    private final OrionBusMonitor monitor = new OrionBusMonitor(this);
+
+    public OrionBusMonitor getMonitor() {
+        return monitor;
+    }
+
+    public void addNoticeListener(java.util.function.Consumer<Notice> l) {
+        noticeListeners.add(l);
+    }
+
+    public void removeNoticeListener(java.util.function.Consumer<Notice> l) {
+        noticeListeners.remove(l);
+    }
+
+    void notice(Notice n) {
+        addLog(Math.max(0, n.rail), n.kind == Notice.Kind.ERROR ? OrionBusListener.Direction.ERROR
+                : OrionBusListener.Direction.INFO, n.text);
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            for (java.util.function.Consumer<Notice> l : noticeListeners) {
+                l.accept(n);
+            }
+        });
+    }
 
     public OrionSettings getSettings() {
         Machine machine = Configuration.get().getMachine();
@@ -218,6 +261,7 @@ public class OrionManager {
     public synchronized void connect() throws OrionException {
         hookMachine(Configuration.get().getMachine());
         disconnect();
+        userDisconnected = false;
         OrionSettings s = getSettings();
         OrionTransport t;
         switch (s.getMode()) {
@@ -255,11 +299,15 @@ public class OrionManager {
             buses.add(b);
         }
         lastError = "";
+        java.util.Arrays.fill(userPowerOff, false);
         addLog(0, OrionBusListener.Direction.INFO, "Connected: " + t.describe());
+        monitor.start();
         fireChanged();
     }
 
+    /** Close the connection for good (until the user connects again): the monitor will not reconnect. */
     public synchronized void disconnect() {
+        userDisconnected = true;
         if (transport != null) {
             transport.close();
             addLog(0, OrionBusListener.Direction.INFO, "Disconnected");
@@ -267,6 +315,121 @@ public class OrionManager {
         transport = null;
         buses.clear();
         fireChanged();
+    }
+
+    /** Reopen the port of the existing transport and keep the device table (the adapter was replugged). */
+    synchronized void reconnectKeepingTable() throws OrionException {
+        if (transport == null) {
+            connect();
+            return;
+        }
+        transport.close();
+        transport.open();
+        for (OrionBus b : buses) {
+            b.noteBusReset();
+        }
+        lastError = "";
+        addLog(0, OrionBusListener.Direction.INFO, "Reconnected: " + transport.describe());
+        fireChanged();
+    }
+
+    synchronized boolean isUserDisconnected() {
+        return userDisconnected;
+    }
+
+    /** Switch a rail's supply (host board) and remember that the user did it, so the monitor leaves it alone. */
+    public synchronized boolean setRailPower(int rail, boolean on) throws OrionException {
+        if (transport == null) {
+            throw new OrionException(OrionException.Kind.TRANSPORT, "Not connected");
+        }
+        boolean ok = transport.setRailPower(rail, on);
+        if (ok && rail >= 0 && rail < userPowerOff.length) {
+            userPowerOff[rail] = !on;
+        }
+        return ok;
+    }
+
+    synchronized boolean isRailPoweredOffByUser(int rail) {
+        return rail >= 0 && rail < userPowerOff.length && userPowerOff[rail];
+    }
+
+    /**
+     * Bring a hung bus back without losing the device table. Soft: flush and reopen the port (cures a
+     * stalled USB driver, a half-unplugged adapter, garbage in the buffers). Hard: also switch every
+     * rail supply off and on where the interface can (a feeder stuck transmitting, which blocks every
+     * other one, only lets go of the line then). Feeders restart with no address and get the one they
+     * had before; the monitor picks them up again by itself.
+     *
+     * @return true when the port is open again
+     */
+    public boolean resetBus(boolean hard, String why) {
+        OrionTransport t;
+        List<OrionBus> bs;
+        final boolean[] off;
+        synchronized (this) {
+            t = transport;
+            bs = new ArrayList<>(buses);
+            off = userPowerOff.clone(); // read now: taking the manager lock while holding a bus lock could deadlock
+        }
+        if (t == null) {
+            return false;
+        }
+        addLog(0, OrionBusListener.Direction.INFO,
+                (hard ? "HARD bus reset" : "Bus reset") + (why == null ? "" : ": " + why));
+        // Wait for every exchange in flight, then keep the rails still while the port is cycled.
+        return lockAll(bs, 0, () -> {
+            try {
+                if (hard) {
+                    for (OrionBus b : bs) {
+                        if (!off[b.getRail()]) {
+                            try {
+                                t.setRailPower(b.getRail(), false);
+                            } catch (OrionException ignore) {
+                                // not every interface can
+                            }
+                        }
+                    }
+                }
+                t.close();
+                Thread.sleep(hard ? 1200 : 250);
+                if (hard) {
+                    for (OrionBus b : bs) {
+                        if (!off[b.getRail()]) {
+                            try {
+                                t.setRailPower(b.getRail(), true);
+                            } catch (OrionException ignore) {
+                            }
+                        }
+                    }
+                    Thread.sleep(800);
+                }
+                t.open();
+                for (OrionBus b : bs) {
+                    b.noteBusReset();
+                }
+                lastError = "";
+                addLog(0, OrionBusListener.Direction.INFO, "Bus reopened: " + t.describe());
+                fireChanged();
+                return true;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            } catch (OrionException e) {
+                lastError = e.getMessage();
+                addLog(0, OrionBusListener.Direction.ERROR, "Bus reset failed: " + e.getMessage());
+                fireChanged();
+                return false;
+            }
+        });
+    }
+
+    private static boolean lockAll(List<OrionBus> bs, int i, java.util.function.Supplier<Boolean> action) {
+        if (i >= bs.size()) {
+            return action.get();
+        }
+        synchronized (bs.get(i)) {
+            return lockAll(bs, i + 1, action);
+        }
     }
 
     public synchronized void connectIfNeeded() throws OrionException {
