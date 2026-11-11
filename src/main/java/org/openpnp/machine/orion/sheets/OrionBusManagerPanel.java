@@ -49,6 +49,8 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
     private final JButton connectButton = new JButton("Connect");
     private final JProgressBar progress = new JProgressBar();
     private int builtRails = -1;
+    /** Selected tile per rail, kept here so it survives refreshes and rebuilds of the rail views. */
+    private final java.util.Map<Integer, String> selections = new java.util.HashMap<>();
 
     public OrionBusManagerPanel() {
         setLayout(new BorderLayout());
@@ -582,6 +584,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
 
         RailPanel(int rail) {
             this.rail = rail;
+            this.selectedKey = selections.get(rail);
             setLayout(new BorderLayout());
 
             JPanel north = new JPanel();
@@ -873,6 +876,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
 
         private void select(String key) {
             selectedKey = key;
+            selections.put(rail, key);
             for (FeederTile t : tileList) {
                 t.setSelected(t.row.key().equals(key));
             }
@@ -970,6 +974,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                                 mgr.getBus(rail).forgetAddress(d.address);
                             }
                             selectedKey = null;
+                            selections.remove(rail);
                             mgr.refresh();
                         });
                 forget.setEnabled(d != null);
@@ -1121,6 +1126,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             refreshPending();
             if (selectedKey != null && selected() == null) {
                 selectedKey = null;
+                selections.remove(rail);
             }
             rebuildDetails();
         }
