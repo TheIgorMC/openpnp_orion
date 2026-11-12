@@ -597,16 +597,15 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         if (rails != builtRails) {
             railTabs.removeAll();
             visionHolder.removeAll();
-            JPanel visions = new JPanel();
-            visions.setLayout(new javax.swing.BoxLayout(visions, javax.swing.BoxLayout.Y_AXIS));
+            JTabbedPane visions = new JTabbedPane();
             for (int r = 0; r < rails; r++) {
                 RailPanel rp = new RailPanel(r);
                 railTabs.addTab("Rail " + (r + 1), rp);
-                JPanel v = rp.visionSettings();
-                v.setBorder(BorderFactory.createTitledBorder("Rail " + (r + 1)
-                        + ": vision scan (large fiducials; machine coordinates, mm)"));
-                v.setAlignmentX(Component.LEFT_ALIGNMENT);
-                visions.add(v);
+                JPanel wrapV = new JPanel(new BorderLayout());
+                JScrollPane vs = new JScrollPane(wrapV);
+                wrapV.add(rp.visionSettings(), BorderLayout.NORTH);
+                vs.setBorder(null);
+                visions.addTab("Rail " + (r + 1), vs);
             }
             builtRails = rails;
             if (rails == 0) {
@@ -614,11 +613,9 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                         + "Choose the interface in the Connection tab and press Connect (top right).</body></html>");
                 hint.setVerticalAlignment(javax.swing.SwingConstants.TOP);
                 railTabs.addTab("Rails", hint);
-                visions.add(new JLabel("  Connect first: the vision scan settings are per rail."));
+                visions.addTab("Rails", new JLabel("  Connect first: these settings are per rail."));
             }
-            JPanel wrap = new JPanel(new BorderLayout());
-            wrap.add(visions, BorderLayout.NORTH);
-            visionHolder.add(wrap, BorderLayout.CENTER);
+            visionHolder.add(visions, BorderLayout.CENTER);
             visionHolder.revalidate();
         }
         for (Component c : railTabs.getComponents()) {
@@ -755,87 +752,72 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
 
         private JPanel visionSettings() {
             org.openpnp.machine.orion.OrionRailSettings rs = mgr.getSettings().getRailSettings(rail);
-            JPanel p = new JPanel(new java.awt.GridLayout(6, 1));
-            p.setBorder(BorderFactory.createTitledBorder(
-                    "Vision scan of this rail (large fiducials; machine coordinates, mm)"));
-            JPanel row1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
-            JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
-            JPanel row3 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
-            p.add(row1);
-            p.add(row2);
-            JPanel row4 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
-            p.add(row3);
-            p.add(row4);
-            row1.add(new JLabel("X from"));
-            row1.add(dspin(rs.getXMin(), -5000, 5000, 1, rs::setXMin));
-            row1.add(new JLabel("to"));
-            row1.add(dspin(rs.getXMax(), -5000, 5000, 1, rs::setXMax));
-            row1.add(new JLabel("fiducial Y"));
-            row1.add(dspin(rs.getFiducialY(), -5000, 5000, 0.1, rs::setFiducialY));
-            row1.add(new JLabel("Z"));
-            row1.add(dspin(rs.getFiducialZ(), -500, 500, 0.1, rs::setFiducialZ));
-            row2.add(new JLabel("step"));
-            row2.add(dspin(rs.getScanStepMm(), 1, 50, 0.5, rs::setScanStepMm));
-            row2.add(new JLabel("exclusion"));
-            row2.add(dspin(rs.getExclusionMm(), 1, 50, 0.5, rs::setExclusionMm));
-            row2.add(new JLabel("fiducial spacing (0 = off)"));
-            row2.add(dspin(rs.getFiducialSpacingMm(), 0, 100, 0.5, rs::setFiducialSpacingMm));
-            row2.add(new JLabel("save shifts >"));
-            row2.add(dspin(rs.getMinSaveMm(), 0, 5, 0.01, rs::setMinSaveMm));
-            row2.add(new JLabel("reject >"));
-            row2.add(dspin(rs.getMaxShiftMm(), 0.1, 50, 0.1, rs::setMaxShiftMm));
+            JPanel box = new JPanel();
+            box.setLayout(new javax.swing.BoxLayout(box, javax.swing.BoxLayout.Y_AXIS));
+
+            // ---- where the feeders are looked for
+            JPanel scan = OrionUi.grid();
+            scan.setBorder(BorderFactory.createTitledBorder("1. Where to look for the large fiducials (machine mm)"));
+            OrionUi.row(scan, 0, "X range of the rail", OrionUi.line(dspin(rs.getXMin(), -5000, 5000, 1, rs::setXMin),
+                    new JLabel("to"), dspin(rs.getXMax(), -5000, 5000, 1, rs::setXMax)));
+            OrionUi.row(scan, 1, "Fiducials at Y / Z", OrionUi.line(dspin(rs.getFiducialY(), -5000, 5000, 0.1,
+                    rs::setFiducialY), new JLabel("/"), dspin(rs.getFiducialZ(), -500, 500, 0.1, rs::setFiducialZ)));
+            OrionUi.row(scan, 2, "Search step / exclusion", OrionUi.line(dspin(rs.getScanStepMm(), 1, 50, 0.5,
+                    rs::setScanStepMm), new JLabel("/"), dspin(rs.getExclusionMm(), 1, 50, 0.5, rs::setExclusionMm)));
+            OrionUi.row(scan, 3, "Spacing of a feeder's 3 fiducials", OrionUi.line(dspin(rs.getFiducialSpacingMm(), 0,
+                    100, 0.5, rs::setFiducialSpacingMm), new JLabel("(0 = unknown, then all are kept)")));
+            OrionUi.row(scan, 4, "Save a shift above / reject above", OrionUi.line(dspin(rs.getMinSaveMm(), 0, 5,
+                    0.01, rs::setMinSaveMm), new JLabel("/"), dspin(rs.getMaxShiftMm(), 0.1, 50, 0.1,
+                            rs::setMaxShiftMm)));
+            JCheckBox auto = new JCheckBox("Rescan automatically when a feeder is missing", rs.isAutoRescan());
+            auto.addActionListener(e -> rs.setAutoRescan(auto.isSelected()));
+            OrionUi.row(scan, 5, "", auto);
+            box.add(scan);
+
+            // ---- fiber / hole offsets
+            JPanel off = OrionUi.grid();
+            off.setBorder(BorderFactory.createTitledBorder("2. Fiber spot and sprocket hole, from the large fiducial (mm)"));
             fiberX = dspin(rs.getFiberOffsetX(), -500, 500, 0.1, rs::setFiberOffsetX);
             fiberY = dspin(rs.getFiberOffsetY(), -500, 500, 0.1, rs::setFiberOffsetY);
             holeX = dspin(rs.getHoleOffsetX(), -500, 500, 0.1, rs::setHoleOffsetX);
             holeY = dspin(rs.getHoleOffsetY(), -500, 500, 0.1, rs::setHoleOffsetY);
-            row3.add(new JLabel("fiber spot from fiducial dX/dY"));
-            row3.add(fiberX);
-            row3.add(fiberY);
-            row3.add(button("Teach here", () -> teachOffset(true)));
-            row3.add(new JLabel("hole dX/dY"));
-            row3.add(holeX);
-            row3.add(holeY);
-            row3.add(button("Teach here", () -> teachOffset(false)));
-            JCheckBox auto = new JCheckBox("Rescan automatically when a feeder is missing", rs.isAutoRescan());
-            auto.addActionListener(e -> rs.setAutoRescan(auto.isSelected()));
-            row4.add(auto);
+            OrionUi.row(off, 0, "Fiber spot dX / dY", OrionUi.line(fiberX, fiberY, button("Teach here",
+                    () -> teachOffset(true))));
+            OrionUi.row(off, 1, "Sprocket hole dX / dY", OrionUi.line(holeX, holeY, button("Teach here",
+                    () -> teachOffset(false))));
+            OrionUi.row(off, 2, "", new JLabel("Teach here: select a feeder with a known fiducial, jog the camera over "
+                    + "the spot, press."));
+            box.add(off);
 
-            JPanel row5 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
-            JPanel row6 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
-            p.add(row5);
-            p.add(row6);
-            JCheckBox win = new JCheckBox("Pick window: peel edge at", rs.isPickWindowSet());
-            win.setToolTipText("Where the cover tape is peeled back, along the tape axis. The setup cycle brings "
-                    + "each pocket to this edge + margin + half its length.");
-            win.addActionListener(e -> rs.setPickWindowSet(win.isSelected()));
+            // ---- pick window and height
+            JPanel win = OrionUi.grid();
+            win.setBorder(BorderFactory.createTitledBorder("3. Pick window and height (used by the setup cycle)"));
+            JCheckBox use = new JCheckBox("Use a pick window", rs.isPickWindowSet());
+            use.addActionListener(e -> rs.setPickWindowSet(use.isSelected()));
+            OrionUi.row(win, 0, "", use);
             JSpinner edge = dspin(rs.getPeelEdge(), -5000, 5000, 0.1, v -> {
                 rs.setPeelEdge(v);
                 rs.setPickWindowSet(true);
-                win.setSelected(true);
+                use.setSelected(true);
             });
-            row5.add(win);
-            row5.add(edge);
-            row5.add(button("= camera X", () -> edge.setValue(Math.round(cameraAxis(0) * 100) / 100.0)));
-            row5.add(button("= camera Y", () -> edge.setValue(Math.round(cameraAxis(1) * 100) / 100.0)));
-            row5.add(new JLabel("margin"));
-            row5.add(dspin(rs.getWindowMarginMm(), 0, 20, 0.1, rs::setWindowMarginMm));
-            JComboBox<String> dir = new JComboBox<>(new String[] {"pockets on the + side of the edge",
-                    "pockets on the - side of the edge"});
+            OrionUi.row(win, 1, "Peel edge along the tape", OrionUi.line(edge,
+                    button("= camera X", () -> edge.setValue(Math.round(cameraAxis(0) * 100) / 100.0)),
+                    button("= camera Y", () -> edge.setValue(Math.round(cameraAxis(1) * 100) / 100.0))));
+            JComboBox<String> dir = new JComboBox<>(new String[] {"on the + side of the edge",
+                    "on the - side of the edge"});
             dir.setSelectedIndex(rs.getWindowDirection() >= 0 ? 0 : 1);
             dir.addActionListener(e -> rs.setWindowDirection(dir.getSelectedIndex() == 0 ? 1 : -1));
-            row5.add(dir);
-            JCheckBox zc = new JCheckBox("Start pick Z at", rs.isPickZSet());
-            zc.setToolTipText("Pick height every new feeder of this rail starts with, until the vacuum probe has "
-                    + "measured its own at the first feed.");
+            OrionUi.row(win, 2, "Exposed pockets lie", OrionUi.line(dir, new JLabel("margin (mm)"),
+                    dspin(rs.getWindowMarginMm(), 0, 20, 0.1, rs::setWindowMarginMm)));
+            JCheckBox zc = new JCheckBox("New feeders start at this pick Z", rs.isPickZSet());
             zc.addActionListener(e -> rs.setPickZSet(zc.isSelected()));
             JSpinner zs = dspin(rs.getDefaultPickZ(), -500, 500, 0.05, v -> {
                 rs.setDefaultPickZ(v);
                 rs.setPickZSet(true);
                 zc.setSelected(true);
             });
-            row6.add(zc);
-            row6.add(zs);
-            row6.add(button("= nozzle Z", () -> {
+            OrionUi.row(win, 3, "", zc);
+            OrionUi.row(win, 4, "Default pick Z", OrionUi.line(zs, button("= nozzle Z", () -> {
                 try {
                     zs.setValue(Math.round(Configuration.get().getMachine().getDefaultHead().getDefaultNozzle()
                             .getLocation().convertToUnits(org.openpnp.model.LengthUnit.Millimeters).getZ() * 100)
@@ -843,8 +825,9 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                 } catch (Exception ex) {
                     org.openpnp.gui.support.MessageBoxes.errorBox(MainFrame.get(), "Nozzle Z", ex);
                 }
-            }));
-            return p;
+            })));
+            box.add(win);
+            return box;
         }
 
         private double cameraAxis(int axis) {
