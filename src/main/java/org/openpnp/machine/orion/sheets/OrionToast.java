@@ -72,6 +72,17 @@ public final class OrionToast {
             body.add(text, BorderLayout.CENTER);
             JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
             buttons.setOpaque(false);
+            if (n.kind == Notice.Kind.SETUP_DUE) {
+                JButton start = new JButton("Start setup cycle");
+                start.addActionListener(e -> {
+                    close();
+                    OrionSetupUi.start(null, null);
+                });
+                buttons.add(start);
+                JButton later = new JButton("Later");
+                later.addActionListener(e -> close());
+                buttons.add(later);
+            }
             if (n.kind == Notice.Kind.FOUND) {
                 JButton now = new JButton("Scan now");
                 now.addActionListener(e -> {
@@ -89,7 +100,7 @@ public final class OrionToast {
             body.add(buttons, BorderLayout.EAST);
             window.setContentPane(body);
             setText(n);
-            int ms = n.kind == Notice.Kind.FOUND ? 0 : n.kind == Notice.Kind.LOST || n.kind == Notice.Kind.ERROR ? 9000 : 6000;
+            int ms = n.kind == Notice.Kind.FOUND || n.kind == Notice.Kind.SETUP_DUE ? 0 : n.kind == Notice.Kind.LOST || n.kind == Notice.Kind.ERROR ? 9000 : 6000;
             life = new Timer(Math.max(1, ms), e -> close());
             life.setRepeats(false);
             if (ms > 0) {
@@ -108,7 +119,8 @@ public final class OrionToast {
         void setText(Notice n) {
             text.setText("<html><body style='width:300px'>" + n.text.replace("<", "&lt;") + "</body></html>");
             window.pack();
-            window.setSize(Math.max(380, window.getWidth()), window.getHeight());
+            window.setSize(Math.max(n.kind == Notice.Kind.SETUP_DUE ? 520 : 380, window.getWidth()),
+                    window.getHeight());
         }
 
         void close() {
@@ -125,6 +137,7 @@ public final class OrionToast {
     private static Color accent(Notice.Kind k) {
         switch (k) {
             case FOUND:
+            case SETUP_DUE:
                 return new Color(0x1A73E8);
             case ADDED:
             case BACK:

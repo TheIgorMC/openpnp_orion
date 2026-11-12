@@ -159,6 +159,19 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         live.add(button("Peel", "Peel motor forward for the calibrated time", () -> feeder.peel(false)));
         live.add(button("Unpeel", "Peel motor in reverse for the calibrated time", () -> feeder.peel(true)));
         live.add(button("Stop", "Brake both motors", () -> feeder.stop()));
+        live.add(button("Set up pick position", "Bring this feeder's pocket to the rail's pick window (vision or "
+                + "semi blind by part size). Moves the camera and the tape. Machine must be homed.", () -> {
+                    org.openpnp.machine.orion.OrionSettings st = OrionManager.get().getSettings();
+                    OrionFeeder.PickSetupResult r = feeder.setupPick(st.getRailSettings(feeder.getRail()), st);
+                    OrionManager.get().addLog(feeder.getRail(),
+                            org.openpnp.machine.orion.protocol.OrionBusListener.Direction.INFO,
+                            feeder.getName() + ": " + r.message);
+                    OrionUi.onEdt(() -> {
+                        loadFromModel();
+                        JOptionPane.showMessageDialog(this, r.message, "Pick position",
+                                r.ok ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
+                    });
+                }));
         JPanel liveAll = new JPanel();
         liveAll.setLayout(new BoxLayout(liveAll, BoxLayout.Y_AXIS));
         live.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);

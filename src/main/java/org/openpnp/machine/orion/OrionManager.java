@@ -64,7 +64,7 @@ public class OrionManager {
 
     /** A short message for the user ("found a new feeder", "feeder lost", "bus was reset"). */
     public static class Notice {
-        public enum Kind { FOUND, ADDED, LOST, BACK, RESET, ERROR }
+        public enum Kind { FOUND, ADDED, LOST, BACK, RESET, ERROR, SETUP_DUE }
 
         public final long time = System.currentTimeMillis();
         public final Kind kind;
@@ -174,6 +174,14 @@ public class OrionManager {
         }
         hookedMachine = machine;
         machine.addListener(new org.openpnp.spi.MachineListener.Adapter() {
+            @Override
+            public void machineHomed(Machine m, boolean isHomed) {
+                if (isHomed && getSettings().isPromptSetupOnHome()) {
+                    offerSetupCycle("The machine is homed. Verify the feeder rails by vision and set up the pick "
+                            + "positions now?");
+                }
+            }
+
             @Override
             public void machineEnabled(Machine m) {
                 if (!getSettings().isConnectOnEnable()) {
@@ -815,6 +823,15 @@ public class OrionManager {
      */
     public OrionRailScanner.Result verifyRail(int rail, OrionRailScanner.Progress progress)
             throws Exception {
+        return verifyRail(rail, progress, false);
+    }
+
+    /**
+     * @param confirmByFiber also prove with the fiber that the unit at a feeder's saved X is that feeder (catches a
+     *                       replaced feeder in a tightly packed bank)
+     */
+    public OrionRailScanner.Result verifyRail(int rail, OrionRailScanner.Progress progress, boolean confirmByFiber)
+            throws Exception {
         OrionSettings settings = getSettings();
         OrionRailSettings rs = settings.getRailSettings(rail);
         if (!rs.isConfigured()) {
@@ -868,8 +885,12 @@ public class OrionManager {
         p.minSaveMm = rs.getMinSaveMm();
         p.maxShiftMm = rs.getMaxShiftMm();
         p.autoRescan = rs.isAutoRescan();
-        OrionRailScanner.Result r = new OrionRailScanner(p, new OrionVisionFinder(part), progress)
-                .withIdentifier(buildIdentifier(rail, rs)).run(targets);
+        OrionRailScanner scanner = new OrionRailScanner(p, new OrionVisionFinder(part), progress)
+                .withIdentifier(buildIdentifier(rail, rs));
+        if (confirmByFiber) {
+            scanner.withConfirmer((t, fiducial) -> confirmByFiber(rail, rs, t, fiducial));
+        }
+        OrionRailScanner.Result r = scanner.run(targets);
         boolean clean = true;
         for (OrionRailScanner.Target t : r.targets) {
             clean &= t.state == OrionRailScanner.State.OK || t.state == OrionRailScanner.State.SHIFTED
@@ -882,6 +903,127 @@ public class OrionManager {
         addLog(rail, OrionBusListener.Direction.INFO, "vision verify: " + r.summary());
         refresh();
         return r;
+    }
+
+    private final java.util.Set<Integer> fiberCheckWarned = new java.util.HashSet<>();
+
+    /**
+     * The feeder's fiducial is where it should be: light its fiber and look. If the spot does not light up, the unit
+     * standing there is another one (the feeder was replaced) or the unit is gone.
+     */
+    private boolean confirmByFiber(int rail, OrionRailSettings rs, OrionRailScanner.Target t, Location fiducial)
+            throws Exception {
+        OrionFeeder f = feederOf(t);
+        if (!t.unitOnline) {
+            return false;
+        }
+        if (rs.getFiberOffsetX() == 0 && rs.getFiberOffsetY() == 0) {
+            if (fiberCheckWarned.add(rail)) {
+                addLog(rail, OrionBusListener.Direction.INFO, "setup: no fiber spot offset set for rail " + (rail + 1)
+                        + ", the fiber confirmation is skipped");
+            }
+            return true;
+        }
+        Camera cam = headCamera();
+        Location spot = fiducial.add(new Location(LengthUnit.Millimeters, rs.getFiberOffsetX(),
+                rs.getFiberOffsetY(), 0, 0));
+        org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam, spot);
+        try {
+            double[] r = testFiber(f);
+            boolean lit = r[2] >= r[3];
+            addLog(rail, OrionBusListener.Direction.INFO, "setup: " + f.getName() + " fiber "
+                    + (lit ? "confirmed" : "NOT seen") + String.format(" (rise %.0f, threshold %.0f)", r[2], r[3]));
+            return lit;
+        } catch (Exception e) {
+            addLog(rail, OrionBusListener.Direction.ERROR, "setup: fiber check of " + f.getName()
+                    + " not possible, taken as confirmed: " + e.getMessage());
+            return true;
+        }
+    }
+
+    /** What a setup cycle did on one rail. */
+    public static class SetupReport {
+        public final int rail;
+        public final List<String> lines = new ArrayList<>();
+        public int fine;
+        public int problems;
+
+        SetupReport(int rail) {
+            this.rail = rail;
+        }
+    }
+
+    /**
+     * The setup cycle of one rail, feeder after feeder in X order: find and confirm each feeder (fiducial, then
+     * fiber), then bring its pocket to the rail's pick window (vision or semi blind by part size). New units get a
+     * feeder first. Every feeder re-probes its pick height at its first feed. Machine task; the machine must be homed.
+     */
+    public SetupReport runSetupCycle(int rail, OrionRailScanner.Progress progress) throws Exception {
+        if (!Configuration.get().getMachine().isHomed()) {
+            throw new Exception("Home the machine first.");
+        }
+        connectIfNeeded();
+        OrionSettings st = getSettings();
+        OrionRailSettings rs = st.getRailSettings(rail);
+        SetupReport rep = new SetupReport(rail);
+        OrionBus bus = getBus(rail);
+        if (bus == null) {
+            throw new OrionException(OrionException.Kind.TRANSPORT, "Rail " + (rail + 1) + " is not connected");
+        }
+        bus.scan(null);
+        int made = createFeedersForUnbound(rail).size();
+        if (made > 0) {
+            rep.lines.add(made + " new feeder(s) created for units that had none");
+        }
+        OrionRailScanner.Result r = verifyRail(rail, progress, true);
+        rep.lines.add("Vision: " + r.summary());
+        List<OrionRailScanner.Target> ordered = new ArrayList<>(r.targets);
+        ordered.sort((a, b) -> Double.compare(a.found == null ? Double.MAX_VALUE : a.found.getX(),
+                b.found == null ? Double.MAX_VALUE : b.found.getX()));
+        int i = 0;
+        for (OrionRailScanner.Target t : ordered) {
+            OrionFeeder f = feederOf(t);
+            f.forgetZCheck();
+            boolean there = t.state == OrionRailScanner.State.OK || t.state == OrionRailScanner.State.SHIFTED
+                    || t.state == OrionRailScanner.State.RELOCATED;
+            if (!there) {
+                rep.problems++;
+                rep.lines.add(f.getName() + ": " + t.state + ", pick position not set up");
+                continue;
+            }
+            if (progress != null) {
+                progress.update("Pick position of " + f.getName(), i++, ordered.size());
+            }
+            try {
+                OrionFeeder.PickSetupResult pr = f.setupPick(rs, st);
+                rep.lines.add(f.getName() + ": " + pr.message);
+                if (pr.ok) {
+                    rep.fine++;
+                } else {
+                    rep.problems++;
+                }
+            } catch (Exception e) {
+                rep.problems++;
+                rep.lines.add(f.getName() + ": pick position FAILED: " + e.getMessage());
+            }
+        }
+        for (String l : rep.lines) {
+            addLog(rail, OrionBusListener.Direction.INFO, "setup: " + l);
+        }
+        refresh();
+        return rep;
+    }
+
+    /** Ask the user to run the setup cycle (a message with a Start button), if a rail is configured for it. */
+    public void offerSetupCycle(String why) {
+        OrionSettings st = getSettings();
+        boolean any = false;
+        for (int r = 0; r < Math.max(2, getRailCount()); r++) {
+            any |= st.getRailSettings(r).isConfigured();
+        }
+        if (any) {
+            notice(new Notice(Notice.Kind.SETUP_DUE, 0, why));
+        }
     }
 
     /** Manual association: the camera is over the feeder's large fiducial; measure and save it. */

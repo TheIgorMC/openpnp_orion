@@ -95,6 +95,181 @@ public class OrionSettings {
         autoScanDelayS = Math.max(5, v);
     }
 
+    // ---- setup cycle (verify rails, bring every pocket to the pick window) and pick height probe
+
+    /** Parts up to this size (the larger of the two sides against the larger limit) use camera + jog; bigger go semi blind. */
+    @Attribute(required = false)
+    private double maxVisionWidthMm = 3.0;
+
+    @Attribute(required = false)
+    private double maxVisionLengthMm = 4.0;
+
+    /** A pocket this close to the target (along the tape) counts as already in place. */
+    @Attribute(required = false)
+    private double pocketTolMm = 0.10;
+
+    /** Semi blind: a pocket seen further than this from where it should be is reported. */
+    @Attribute(required = false)
+    private double blindCheckTolMm = 1.5;
+
+    /** Offer the setup cycle when the machine has been homed. */
+    @Attribute(required = false)
+    private boolean promptSetupOnHome = true;
+
+    /** Lower each feeder's pick position onto the part with the vacuum sensor at its first feed of a session. */
+    @Attribute(required = false)
+    private boolean zProbeEnabled = true;
+
+    @Attribute(required = false)
+    private String vacuumSenseActuator = "";
+
+    /** True: the reading goes down when the nozzle seals (a pressure sensor), false: it goes up (a vacuum level). */
+    @Attribute(required = false)
+    private boolean vacuumSealedBelow = true;
+
+    @Attribute(required = false)
+    private double vacuumThreshold = 0;
+
+    @Attribute(required = false)
+    private double zStepMm = 0.05;
+
+    @Attribute(required = false)
+    private double zSearchAboveMm = 1.0;
+
+    @Attribute(required = false)
+    private double zSearchBelowMm = 1.5;
+
+    /** Deeper than the first sealed reading. */
+    @Attribute(required = false)
+    private double zExtraMm = 0.10;
+
+    @Attribute(required = false)
+    private int zSettleMs = 60;
+
+    /** Fraction of the nozzle's speed used while probing. */
+    @Attribute(required = false)
+    private double zSpeed = 0.25;
+
+    public double getMaxVisionWidthMm() {
+        return maxVisionWidthMm;
+    }
+
+    public void setMaxVisionWidthMm(double v) {
+        maxVisionWidthMm = v;
+    }
+
+    public double getMaxVisionLengthMm() {
+        return maxVisionLengthMm;
+    }
+
+    public void setMaxVisionLengthMm(double v) {
+        maxVisionLengthMm = v;
+    }
+
+    public double getPocketTolMm() {
+        return Math.max(0.01, pocketTolMm);
+    }
+
+    public void setPocketTolMm(double v) {
+        pocketTolMm = v;
+    }
+
+    public double getBlindCheckTolMm() {
+        return blindCheckTolMm;
+    }
+
+    public void setBlindCheckTolMm(double v) {
+        blindCheckTolMm = v;
+    }
+
+    public boolean isPromptSetupOnHome() {
+        return promptSetupOnHome;
+    }
+
+    public void setPromptSetupOnHome(boolean v) {
+        promptSetupOnHome = v;
+    }
+
+    public boolean isZProbeEnabled() {
+        return zProbeEnabled;
+    }
+
+    public void setZProbeEnabled(boolean v) {
+        zProbeEnabled = v;
+    }
+
+    public String getVacuumSenseActuator() {
+        return vacuumSenseActuator == null ? "" : vacuumSenseActuator;
+    }
+
+    public void setVacuumSenseActuator(String v) {
+        vacuumSenseActuator = v == null ? "" : v;
+    }
+
+    public boolean isVacuumSealedBelow() {
+        return vacuumSealedBelow;
+    }
+
+    public void setVacuumSealedBelow(boolean v) {
+        vacuumSealedBelow = v;
+    }
+
+    public double getVacuumThreshold() {
+        return vacuumThreshold;
+    }
+
+    public void setVacuumThreshold(double v) {
+        vacuumThreshold = v;
+    }
+
+    public double getZStepMm() {
+        return Math.max(0.01, zStepMm);
+    }
+
+    public void setZStepMm(double v) {
+        zStepMm = v;
+    }
+
+    public double getZSearchAboveMm() {
+        return zSearchAboveMm;
+    }
+
+    public void setZSearchAboveMm(double v) {
+        zSearchAboveMm = v;
+    }
+
+    public double getZSearchBelowMm() {
+        return zSearchBelowMm;
+    }
+
+    public void setZSearchBelowMm(double v) {
+        zSearchBelowMm = v;
+    }
+
+    public double getZExtraMm() {
+        return zExtraMm;
+    }
+
+    public void setZExtraMm(double v) {
+        zExtraMm = v;
+    }
+
+    public int getZSettleMs() {
+        return zSettleMs;
+    }
+
+    public void setZSettleMs(int v) {
+        zSettleMs = Math.max(0, v);
+    }
+
+    public double getZSpeed() {
+        return Math.min(1.0, Math.max(0.02, zSpeed));
+    }
+
+    public void setZSpeed(double v) {
+        zSpeed = v;
+    }
+
     /** The large fiducial (middle one of each feeder's set) used to find feeders on the rail. */
     @Attribute(required = false)
     private String largeFiducialPartId = "";

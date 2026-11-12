@@ -42,6 +42,79 @@ public class OrionRailSettings {
     @Attribute(required = false)
     private boolean autoRescan = true;
 
+    /**
+     * The pick window: where the cover tape is peeled back, as a machine coordinate along the tape axis. The pocket of
+     * every feeder of the rail is brought to peelEdge + direction * (margin + half its length).
+     */
+    @Attribute(required = false)
+    private boolean pickWindowSet = false;
+
+    @Attribute(required = false)
+    private double peelEdge = 0;
+
+    /** Distance from the peel edge to the near side of the exposed pocket, mm. */
+    @Attribute(required = false)
+    private double windowMarginMm = 0.5;
+
+    /** +1 or -1: the exposed pockets lie on the positive / negative side of the peel edge. */
+    @Attribute(required = false)
+    private int windowDirection = 1;
+
+    /** Pick Z every feeder of the rail starts with, until its own is found by the vacuum probe. */
+    @Attribute(required = false)
+    private boolean pickZSet = false;
+
+    @Attribute(required = false)
+    private double defaultPickZ = 0;
+
+    public boolean isPickWindowSet() {
+        return pickWindowSet;
+    }
+
+    public void setPickWindowSet(boolean v) {
+        pickWindowSet = v;
+    }
+
+    public double getPeelEdge() {
+        return peelEdge;
+    }
+
+    public void setPeelEdge(double v) {
+        peelEdge = v;
+    }
+
+    public double getWindowMarginMm() {
+        return windowMarginMm;
+    }
+
+    public void setWindowMarginMm(double v) {
+        windowMarginMm = v;
+    }
+
+    public int getWindowDirection() {
+        return windowDirection >= 0 ? 1 : -1;
+    }
+
+    public void setWindowDirection(int v) {
+        windowDirection = v >= 0 ? 1 : -1;
+    }
+
+    public boolean isPickZSet() {
+        return pickZSet;
+    }
+
+    public void setPickZSet(boolean v) {
+        pickZSet = v;
+    }
+
+    public double getDefaultPickZ() {
+        return defaultPickZ;
+    }
+
+    public void setDefaultPickZ(double v) {
+        defaultPickZ = v;
+    }
+
     /** Where the fiber spot is seen, relative to the large fiducial (mm, machine axes). */
     @Attribute(required = false)
     private double fiberOffsetX = 0;

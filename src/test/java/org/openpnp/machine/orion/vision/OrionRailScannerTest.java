@@ -120,4 +120,28 @@ public class OrionRailScannerTest {
         Result r = scanner.run(Arrays.asList(target("a", 50, true, Double.NaN)));
         assertNotEquals(State.SHIFTED, r.targets.get(0).state);
     }
+
+    @Test
+    void replacedFeederIsNotConfirmedAtItsOldPlaceAndIsFoundElsewhere() throws Exception {
+        physical.addAll(Arrays.asList(50.0, 100.0, 150.0, 220.0));
+        // The unit of "b" is now at 220; at 100 sits another unit (the replaced feeder).
+        scanner.withConfirmer((t, f) -> !(t.name.equals("b") && Math.abs(f.getX() - 100) < 1));
+        Result r = scanner.run(Arrays.asList(target("a", 50, true, Double.NaN),
+                target("b", 100, true, Double.NaN), target("c", 150, true, Double.NaN)));
+        assertEquals(State.OK, r.targets.get(0).state);
+        assertEquals(State.RELOCATED, r.targets.get(1).state, r.log.toString());
+        assertEquals(220.0, r.targets.get(1).found.getX(), 0.01);
+        assertEquals(1, r.unclaimed.size(), "the fiducial of the replacing unit stays unclaimed");
+        assertEquals(100.0, r.unclaimed.get(0).getX(), 0.01);
+    }
+
+    @Test
+    void confirmedFeedersAreUntouched() throws Exception {
+        physical.addAll(Arrays.asList(50.0, 100.0));
+        scanner.withConfirmer((t, f) -> true);
+        Result r = scanner.run(Arrays.asList(target("a", 50, true, Double.NaN), target("b", 100, true, Double.NaN)));
+        assertEquals(State.OK, r.targets.get(0).state);
+        assertEquals(State.OK, r.targets.get(1).state);
+        assertFalse(r.rescanNeeded);
+    }
 }

@@ -47,6 +47,15 @@ public class OrionRailScanner {
         Target identify(Location fiducial, List<Target> pending) throws Exception;
     }
 
+    /**
+     * Last check of a feeder whose fiducial was found where it should be: is the unit that sits there really
+     * this feeder (fiber light)? A replaced feeder has the same fiducial position but another unit.
+     */
+    public interface Confirmer {
+        /** @return false when the unit at this fiducial is not the feeder's; it is then treated as missing. */
+        boolean confirm(Target t, Location fiducial) throws Exception;
+    }
+
     public interface Progress {
         void update(String text, int done, int total);
     }
@@ -89,6 +98,8 @@ public class OrionRailScanner {
         /** Caller's handle for the feeder (used by identifiers). */
         public Object tag;
 
+        /** X of a fiducial where this feeder's unit was tried and rejected (confirmation failed); NaN = none. */
+        public double rejectedX = Double.NaN;
         public State state = State.MISSING;
         public Location found;
 
@@ -132,6 +143,7 @@ public class OrionRailScanner {
     private final FiducialFinder finder;
     private final Progress progress;
     private Identifier identifier;
+    private Confirmer confirmer;
 
     public OrionRailScanner(Params params, FiducialFinder finder, Progress progress) {
         this.p = params;
@@ -142,6 +154,12 @@ public class OrionRailScanner {
     /** Optional: decide ambiguous leftovers by lighting fibers / moving tapes. */
     public OrionRailScanner withIdentifier(Identifier identifier) {
         this.identifier = identifier;
+        return this;
+    }
+
+    /** Optional: prove with the fiber that a feeder found at its saved X is the same unit. */
+    public OrionRailScanner withConfirmer(Confirmer confirmer) {
+        this.confirmer = confirmer;
         return this;
     }
 
@@ -177,6 +195,13 @@ public class OrionRailScanner {
                         + (finder.lastProblem().isEmpty() ? "" : " (" + finder.lastProblem() + ")")
                         : String.format("%s: fiducial %.2f mm away (limit %.2f), treated as missing",
                                 t.name, dx, p.maxShiftMm));
+                continue;
+            }
+            if (confirmer != null && !confirmer.confirm(t, f)) {
+                t.state = State.MISSING;
+                t.rejectedX = x(f);
+                r.log.add(t.name + ": a fiducial is at X=" + fmt(x(f)) + " but the unit there is not this feeder "
+                        + "(replaced?), looking for it again");
                 continue;
             }
             known.add(x(f));
@@ -223,7 +248,7 @@ public class OrionRailScanner {
             double predicted = t.nominal.getX() + t.slotShiftMm;
             Location best = null;
             for (Location c : candidates) {
-                if (Math.abs(x(c) - predicted) <= p.associateTolMm
+                if (!rejected(t, c) && Math.abs(x(c) - predicted) <= p.associateTolMm
                         && (best == null || Math.abs(x(c) - predicted) < Math.abs(x(best) - predicted))) {
                     best = c;
                 }
@@ -235,10 +260,19 @@ public class OrionRailScanner {
             }
         }
         // 3b. one and one
-        if (pending.size() == 1 && candidates.size() == 1) {
-            claim(pending.get(0), candidates.get(0), "only unmatched feeder and fiducial", r);
-            candidates.clear();
-            pending.clear();
+        if (pending.size() == 1) {
+            Target only = pending.get(0);
+            List<Location> usable = new ArrayList<>();
+            for (Location c : candidates) {
+                if (!rejected(only, c)) {
+                    usable.add(c);
+                }
+            }
+            if (usable.size() == 1) {
+                claim(only, usable.get(0), "only unmatched feeder and fiducial", r);
+                candidates.remove(usable.get(0));
+                pending.clear();
+            }
         }
         // 3c. several left: ask the identifier (fiber light, else tape movement), one fiducial at a time
         if (identifier != null && !pending.isEmpty()) {
@@ -246,10 +280,19 @@ public class OrionRailScanner {
                 if (pending.isEmpty()) {
                     break;
                 }
+                List<Target> options = new ArrayList<>();
+                for (Target t : pending) {
+                    if (!rejected(t, c)) {
+                        options.add(t);
+                    }
+                }
+                if (options.isEmpty()) {
+                    continue;
+                }
                 report("Identifying fiducial at X=" + fmt(x(c)) + " (" + identifier.method() + ")",
                         0, 1);
-                Target hit = identifier.identify(c, new ArrayList<>(pending));
-                if (hit != null && pending.contains(hit)) {
+                Target hit = identifier.identify(c, options);
+                if (hit != null && options.contains(hit)) {
                     claim(hit, c, "identified by " + identifier.method(), r);
                     pending.remove(hit);
                     candidates.remove(c);
@@ -267,6 +310,11 @@ public class OrionRailScanner {
         r.unclaimed.addAll(candidates);
         report("Done", 1, 1);
         return r;
+    }
+
+    /** This feeder's unit was already tried at this fiducial and is not what sits there. */
+    private static boolean rejected(Target t, Location c) {
+        return !Double.isNaN(t.rejectedX) && Math.abs(x(c) - t.rejectedX) <= 1.0;
     }
 
     private void claim(Target t, Location c, String why, Result r) {

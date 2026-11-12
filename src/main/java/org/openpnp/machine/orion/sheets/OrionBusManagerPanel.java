@@ -61,7 +61,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         progress.setVisible(false);
         feeders.add(progress, BorderLayout.SOUTH);
         main.addTab("Feeders", feeders);
-        main.addTab("Connection and monitor", top(buildConnectionPanel(), buildMonitorPanel()));
+        main.addTab("Connection and monitor", new JScrollPane(top(buildConnectionPanel(), buildMonitorPanel(), buildSetupPanel())));
         main.addTab("Rail vision scan", visionHolder);
         main.addTab("Fiber / tape identification", top(buildIdentifyPanel()));
         main.addTab("Nozzle trim", top(buildNozzleTrimPanel()));
@@ -477,6 +477,83 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         return p;
     }
 
+    /** Setup cycle limits and the vacuum probe that finds the pick height. */
+    private JPanel buildSetupPanel() {
+        OrionSettings s = mgr.getSettings();
+        JPanel p = OrionUi.grid();
+        p.setBorder(BorderFactory.createTitledBorder("Setup cycle and pick height probe"));
+        int r = 0;
+        JCheckBox prompt = new JCheckBox("Offer the setup cycle when the machine has been homed", s.isPromptSetupOnHome());
+        prompt.addActionListener(e -> s.setPromptSetupOnHome(prompt.isSelected()));
+        OrionUi.row(p, r++, "", prompt);
+        OrionUi.row(p, r++, "Vision up to a part of (mm)", OrionUi.line(new JLabel("width"),
+                spinner(s.getMaxVisionWidthMm(), 0.1, 50, 0.1, s::setMaxVisionWidthMm), new JLabel("length"),
+                spinner(s.getMaxVisionLengthMm(), 0.1, 50, 0.1, s::setMaxVisionLengthMm),
+                new JLabel("larger parts go semi blind (offset only)")));
+        OrionUi.row(p, r++, "Pocket counts as in place within (mm)", spinner(s.getPocketTolMm(), 0.01, 2, 0.01,
+                s::setPocketTolMm));
+        OrionUi.row(p, r++, "Semi blind: report a pocket further off than (mm)", spinner(s.getBlindCheckTolMm(), 0.1,
+                10, 0.1, s::setBlindCheckTolMm));
+
+        JCheckBox probe = new JCheckBox("Find each feeder's pick height with the vacuum sensor at its first feed of a "
+                + "session", s.isZProbeEnabled());
+        probe.addActionListener(e -> s.setZProbeEnabled(probe.isSelected()));
+        OrionUi.row(p, r++, "", probe);
+        java.util.List<String> names = new ArrayList<>();
+        names.add("");
+        try {
+            for (org.openpnp.spi.Actuator a : Configuration.get().getMachine().getActuators()) {
+                names.add(a.getName());
+            }
+            for (org.openpnp.spi.Head h : Configuration.get().getMachine().getHeads()) {
+                for (org.openpnp.spi.Actuator a : h.getActuators()) {
+                    if (!names.contains(a.getName())) {
+                        names.add(a.getName());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // no machine yet: the list stays empty
+        }
+        JComboBox<String> act = new JComboBox<>(names.toArray(new String[0]));
+        act.setSelectedItem(s.getVacuumSenseActuator());
+        act.addActionListener(e -> s.setVacuumSenseActuator((String) act.getSelectedItem()));
+        JLabel reading = new JLabel(" ");
+        OrionUi.row(p, r++, "Vacuum sensor", OrionUi.line(act, button("Read now", () -> {
+            String name = (String) act.getSelectedItem();
+            OrionUi.run("Read vacuum sensor", () -> {
+                org.openpnp.spi.Actuator a = Configuration.get().getMachine().getActuatorByName(name);
+                if (a == null) {
+                    a = Configuration.get().getMachine().getDefaultHead().getActuatorByName(name);
+                }
+                if (a == null) {
+                    throw new Exception("Choose the vacuum sensor actuator first.");
+                }
+                return a.read();
+            }, v -> reading.setText("reads " + v));
+        }), reading));
+        JComboBox<String> sealed = new JComboBox<>(new String[] {"the reading goes down when sealed (pressure)",
+                "the reading goes up when sealed (vacuum level)"});
+        sealed.setSelectedIndex(s.isVacuumSealedBelow() ? 0 : 1);
+        sealed.addActionListener(e -> s.setVacuumSealedBelow(sealed.getSelectedIndex() == 0));
+        OrionUi.row(p, r++, "Sealed when", OrionUi.line(sealed, new JLabel("threshold"),
+                spinner(s.getVacuumThreshold(), -100000, 100000, 1, s::setVacuumThreshold)));
+        OrionUi.row(p, r++, "Search (mm)", OrionUi.line(new JLabel("start above the expected Z"),
+                spinner(s.getZSearchAboveMm(), 0, 20, 0.1, s::setZSearchAboveMm), new JLabel("end below"),
+                spinner(s.getZSearchBelowMm(), 0, 20, 0.1, s::setZSearchBelowMm), new JLabel("step"),
+                spinner(s.getZStepMm(), 0.01, 1, 0.01, s::setZStepMm)));
+        OrionUi.row(p, r++, "Go deeper than the seal by (mm)", spinner(s.getZExtraMm(), 0, 2, 0.01, s::setZExtraMm));
+        OrionUi.row(p, r++, "Settle per step (ms) / speed", OrionUi.line(
+                spinner(s.getZSettleMs(), 0, 2000, 10, v -> s.setZSettleMs((int) v)),
+                spinner(s.getZSpeed(), 0.02, 1, 0.05, s::setZSpeed), new JLabel("of full speed")));
+        OrionUi.row(p, r++, "", new JLabel("<html><body style='width:520px'>Z is taken to decrease going down. The "
+                + "nozzle is lowered step by step over the pick spot with the vacuum on; the first reading past the "
+                + "threshold marks the part, and the pick height is that Z minus the extra depth. Every feeder does "
+                + "this at its first feed of each session, and new or replaced feeders start from the rail's default "
+                + "Z.</body></html>"));
+        return p;
+    }
+
     // ------------------------------------------------------------------ scanning
 
     /** Scan one rail (or all when rail is null) as a machine task with a progress bar. */
@@ -678,7 +755,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
 
         private JPanel visionSettings() {
             org.openpnp.machine.orion.OrionRailSettings rs = mgr.getSettings().getRailSettings(rail);
-            JPanel p = new JPanel(new java.awt.GridLayout(4, 1));
+            JPanel p = new JPanel(new java.awt.GridLayout(6, 1));
             p.setBorder(BorderFactory.createTitledBorder(
                     "Vision scan of this rail (large fiducials; machine coordinates, mm)"));
             JPanel row1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
@@ -722,7 +799,62 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             JCheckBox auto = new JCheckBox("Rescan automatically when a feeder is missing", rs.isAutoRescan());
             auto.addActionListener(e -> rs.setAutoRescan(auto.isSelected()));
             row4.add(auto);
+
+            JPanel row5 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
+            JPanel row6 = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
+            p.add(row5);
+            p.add(row6);
+            JCheckBox win = new JCheckBox("Pick window: peel edge at", rs.isPickWindowSet());
+            win.setToolTipText("Where the cover tape is peeled back, along the tape axis. The setup cycle brings "
+                    + "each pocket to this edge + margin + half its length.");
+            win.addActionListener(e -> rs.setPickWindowSet(win.isSelected()));
+            JSpinner edge = dspin(rs.getPeelEdge(), -5000, 5000, 0.1, v -> {
+                rs.setPeelEdge(v);
+                rs.setPickWindowSet(true);
+                win.setSelected(true);
+            });
+            row5.add(win);
+            row5.add(edge);
+            row5.add(button("= camera X", () -> edge.setValue(Math.round(cameraAxis(0) * 100) / 100.0)));
+            row5.add(button("= camera Y", () -> edge.setValue(Math.round(cameraAxis(1) * 100) / 100.0)));
+            row5.add(new JLabel("margin"));
+            row5.add(dspin(rs.getWindowMarginMm(), 0, 20, 0.1, rs::setWindowMarginMm));
+            JComboBox<String> dir = new JComboBox<>(new String[] {"pockets on the + side of the edge",
+                    "pockets on the - side of the edge"});
+            dir.setSelectedIndex(rs.getWindowDirection() >= 0 ? 0 : 1);
+            dir.addActionListener(e -> rs.setWindowDirection(dir.getSelectedIndex() == 0 ? 1 : -1));
+            row5.add(dir);
+            JCheckBox zc = new JCheckBox("Start pick Z at", rs.isPickZSet());
+            zc.setToolTipText("Pick height every new feeder of this rail starts with, until the vacuum probe has "
+                    + "measured its own at the first feed.");
+            zc.addActionListener(e -> rs.setPickZSet(zc.isSelected()));
+            JSpinner zs = dspin(rs.getDefaultPickZ(), -500, 500, 0.05, v -> {
+                rs.setDefaultPickZ(v);
+                rs.setPickZSet(true);
+                zc.setSelected(true);
+            });
+            row6.add(zc);
+            row6.add(zs);
+            row6.add(button("= nozzle Z", () -> {
+                try {
+                    zs.setValue(Math.round(Configuration.get().getMachine().getDefaultHead().getDefaultNozzle()
+                            .getLocation().convertToUnits(org.openpnp.model.LengthUnit.Millimeters).getZ() * 100)
+                            / 100.0);
+                } catch (Exception ex) {
+                    org.openpnp.gui.support.MessageBoxes.errorBox(MainFrame.get(), "Nozzle Z", ex);
+                }
+            }));
             return p;
+        }
+
+        private double cameraAxis(int axis) {
+            try {
+                org.openpnp.model.Location l = Configuration.get().getMachine().getDefaultHead().getDefaultCamera()
+                        .getLocation().convertToUnits(org.openpnp.model.LengthUnit.Millimeters);
+                return axis == 0 ? l.getX() : l.getY();
+            } catch (Exception e) {
+                return 0;
+            }
         }
 
         private void verifyRail() {
@@ -779,6 +911,14 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
             p.add(btn("Scan rail", "Probe every address, then discover and address new units", () -> scan(rail)));
             p.add(btn("Verify rail by vision", "Check each feeder's large fiducial, save small X shifts, "
                     + "one rescan if something is missing", this::verifyRail));
+            p.add(btn("Setup cycle", "Verify this rail by vision, confirm each feeder with its fiber, then bring "
+                    + "every pocket to the pick window. Moves the camera and the tapes.", () -> OrionSetupUi.start(rail,
+                            (text, done, total) -> OrionUi.onEdt(() -> {
+                                progress.setVisible(true);
+                                progress.setMaximum(Math.max(1, total));
+                                progress.setValue(done);
+                                progress.setString("Rail " + (rail + 1) + ": " + text);
+                            }))));
             createAll = btn("Create feeders for all unbound", "One OpenPnP feeder per unit that has none yet, "
                     + "ordered by slot X", () -> OrionUi.run("Create feeders", () -> mgr.createFeedersForUnbound(rail),
                             made -> JOptionPane.showMessageDialog(this, made.size() + " feeder(s) created. "

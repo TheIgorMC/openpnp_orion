@@ -363,6 +363,10 @@ public class OrionBusMonitor {
             mgr.notice(new Notice(Notice.Kind.ADDED, rail, "Rail " + (rail + 1) + " scanned: " + added
                     + " feeder(s) added" + (created > 0 ? ", " + created + " OpenPnP feeder(s) created" : "")));
             mgr.refresh();
+            if (added > 0 && org.openpnp.model.Configuration.get().getMachine().isHomed()) {
+                mgr.offerSetupCycle("New feeder(s) were added to rail " + (rail + 1)
+                        + ". Verify the rail by vision and set up their pick positions now?");
+            }
             return null;
         }, r -> scanInFlight = false, t -> {
             scanInFlight = false;

@@ -261,6 +261,11 @@ public class OrionFeeder extends ReferenceFeeder {
         Object old = this.serial;
         this.serial = serial == null || serial.isEmpty() ? null : serial.toUpperCase();
         configuredForSerialAddress = null;
+        if (old != null && !old.equals(this.serial)) {
+            // Another unit: whatever height was learned belongs to the old one.
+            pickZLearned = false;
+            zCheckedThisSession = false;
+        }
         firePropertyChange("serial", old, this.serial);
     }
 
@@ -611,6 +616,7 @@ public class OrionFeeder extends ReferenceFeeder {
             runMove(Move.FEED);
         }
         checkTapeByHolesIfNeeded();
+        probePickZIfNeeded(nozzle);
     }
 
     /**
@@ -1203,6 +1209,261 @@ public class OrionFeeder extends ReferenceFeeder {
                     org.openpnp.machine.orion.protocol.OrionBusListener.Direction.ERROR,
                     "tape check failed: " + e.getMessage());
         }
+    }
+
+    // ------------------------------------------------------------------ setup cycle: pick window and pick height
+
+    /** The pick height was measured with the vacuum sensor at some time (kept in the machine file). */
+    @Attribute(required = false)
+    protected boolean pickZLearned = false;
+
+    /** The first feed of every session checks the height again, whatever was learned before. */
+    private transient boolean zCheckedThisSession;
+
+    /** Probe the height again at the next feed. */
+    public void forgetZCheck() {
+        zCheckedThisSession = false;
+    }
+
+    public boolean isPickZLearned() {
+        return pickZLearned;
+    }
+
+    public void forgetPickZ() {
+        pickZLearned = false;
+        zCheckedThisSession = false;
+    }
+
+    /** What the setup cycle did with one feeder. */
+    public static class PickSetupResult {
+        public org.openpnp.machine.orion.vision.OrionPickWindow.Mode mode;
+        public boolean ok;
+        /** The pocket was already where it belongs, nothing was moved or saved. */
+        public boolean unchanged;
+        public int jogs;
+        public String message = "";
+    }
+
+    /** Pocket (width, length along the tape) in mm: the feeder's own setting, else the part's package body. */
+    public double[] componentDimsMm() {
+        if (pocketWidthMm > 0 && pocketLengthMm > 0) {
+            return new double[] {Math.min(pocketWidthMm, pocketLengthMm), Math.max(pocketWidthMm, pocketLengthMm)};
+        }
+        try {
+            Part part = getPart();
+            if (part != null && part.getPackage() != null && part.getPackage().getFootprint() != null) {
+                org.openpnp.model.Footprint fp = part.getPackage().getFootprint();
+                double w = new org.openpnp.model.Length(fp.getBodyWidth(), fp.getUnits())
+                        .convertToUnits(LengthUnit.Millimeters).getValue();
+                double l = new org.openpnp.model.Length(fp.getBodyHeight(), fp.getUnits())
+                        .convertToUnits(LengthUnit.Millimeters).getValue();
+                if (w > 0 && l > 0) {
+                    return new double[] {Math.min(w, l), Math.max(w, l)};
+                }
+            }
+        } catch (Exception e) {
+            Logger.debug("Orion feeder {}: no package size: {}", getName(), e.toString());
+        }
+        return new double[] {0, 0};
+    }
+
+    /** Move the base pick location (slot follow and fiducial correction included) onto this machine X / Y. */
+    private void moveBasePickTo(double x, double y) throws Exception {
+        Location b = basePickLocation().convertToUnits(LengthUnit.Millimeters);
+        location = location.add(new Location(LengthUnit.Millimeters, x - b.getX(), y - b.getY(), 0, 0));
+    }
+
+    /**
+     * Bring this feeder's pocket to the pick window of its rail and save the result as its pick location. Parts
+     * within the vision limits: the tape is jogged until the camera sees a pocket centred on the pick point, then
+     * that is saved as the tape zero. Larger parts: the pick point is set by the offset alone and the camera only
+     * checks that a pocket is roughly there. Must run as a machine task, camera over the rail.
+     */
+    public synchronized PickSetupResult setupPick(OrionRailSettings rs, OrionSettings st) throws Exception {
+        PickSetupResult res = new PickSetupResult();
+        if (!rs.isPickWindowSet()) {
+            throw new Exception("Rail " + (rail + 1) + " has no pick window yet (peel edge). Set it in the Bus "
+                    + "Manager, tab Rail vision scan.");
+        }
+        double[] dims = componentDimsMm();
+        double lengthAlong = dims[1];
+        res.mode = org.openpnp.machine.orion.vision.OrionPickWindow.chooseMode(dims[0], dims[1],
+                st.getMaxVisionWidthMm(), st.getMaxVisionLengthMm());
+        boolean alongY = tapeAxis == org.openpnp.machine.orion.vision.OrionHoleVision.Axis.Y;
+        double along = org.openpnp.machine.orion.vision.OrionPickWindow.targetAlong(rs.getPeelEdge(),
+                rs.getWindowDirection(), rs.getWindowMarginMm(), lengthAlong);
+        Location base = basePickLocation().convertToUnits(LengthUnit.Millimeters);
+        double tx = alongY ? base.getX() : along;
+        double ty = alongY ? along : base.getY();
+        if (!pickZLearned && rs.isPickZSet()) {
+            location = location.convertToUnits(LengthUnit.Millimeters).derive(null, null, rs.getDefaultPickZ(), null);
+        }
+        zCheckedThisSession = false;
+        org.openpnp.spi.Camera cam = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
+        Location target = new Location(LengthUnit.Millimeters, tx, ty, 0, 0);
+        org.openpnp.machine.orion.vision.OrionPocketVision.lightOn(cam);
+        double camZ = pocketCamZ(cam);
+        org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(cam,
+                new Location(LengthUnit.Millimeters, tx, ty, camZ, base.getRotation()));
+        final int ai = alongY ? 1 : 0;
+
+        if (res.mode == org.openpnp.machine.orion.vision.OrionPickWindow.Mode.SEMI_BLIND) {
+            moveBasePickTo(tx, ty);
+            res.ok = true;
+            String seen;
+            try {
+                org.openpnp.machine.orion.vision.OrionPocketVision.Found f = org.openpnp.machine.orion.vision
+                        .OrionPocketVision.find(st.getPocketPipeline(), cam, pocketGeometry());
+                org.openpnp.machine.orion.vision.OrionPocketVision.Candidate c =
+                        org.openpnp.machine.orion.vision.OrionPocketVision.select(f.candidates, pocketWidthMm,
+                                pocketLengthMm, pocketSizeTolPct / 100.0, target);
+                if (c == null) {
+                    seen = "no pocket seen at the window, not checked";
+                } else {
+                    double dev = (ai == 1 ? c.center.getY() - ty : c.center.getX() - tx);
+                    seen = String.format("pocket seen %+.2f mm from the window centre", dev);
+                    if (Math.abs(dev) > st.getBlindCheckTolMm()) {
+                        res.ok = false;
+                        seen += String.format(" (more than %.1f mm: check this feeder)", st.getBlindCheckTolMm());
+                    }
+                }
+            } catch (Exception e) {
+                seen = "camera check not possible: " + e.getMessage();
+            }
+            res.message = String.format("semi blind (part %.1f x %.1f mm): pick set %.2f mm behind the peel edge; %s",
+                    dims[0], dims[1], Math.abs(along - rs.getPeelEdge()), seen);
+            return res;
+        }
+
+        // Vision: jog the tape until a pocket sits on the target.
+        final org.openpnp.machine.orion.vision.OrionPocketVision.Candidate[] last =
+                new org.openpnp.machine.orion.vision.OrionPocketVision.Candidate[1];
+        org.openpnp.machine.orion.vision.OrionPocketAligner.Sensor sensor = () -> {
+            org.openpnp.machine.orion.vision.OrionPocketVision.Found f = org.openpnp.machine.orion.vision
+                    .OrionPocketVision.find(st.getPocketPipeline(), cam, pocketGeometry());
+            org.openpnp.machine.orion.vision.OrionPocketVision.Candidate c =
+                    org.openpnp.machine.orion.vision.OrionPocketVision.select(f.candidates, pocketWidthMm,
+                            pocketLengthMm, pocketSizeTolPct / 100.0, target);
+            last[0] = c;
+            if (c == null) {
+                return null;
+            }
+            return ai == 1 ? c.center.getY() - ty : c.center.getX() - tx;
+        };
+        org.openpnp.machine.orion.vision.OrionPocketAligner.Result a =
+                org.openpnp.machine.orion.vision.OrionPocketAligner.align(sensor, tenths -> {
+                    jogTenthsMm(tenths);
+                    Thread.sleep(OrionManager.get().getSettings().getSettleMs());
+                }, st.getPocketTolMm(), 8, Math.max(1.0, pitchMm / 2.0), Math.max(2, pitchMm / 2), jogSign);
+        res.jogs = a.jogs;
+        jogSign = a.jogSign;
+        if (!a.converged || last[0] == null) {
+            res.ok = false;
+            res.message = "vision: " + a.problem;
+            return res;
+        }
+        Location c = last[0].center;
+        if (a.jogs > 0) {
+            zeroHere();
+        }
+        res.unchanged = a.alreadyInPlace;
+        // The pocket centre is the truth: the pick point sits on it, and later checks are measured against it.
+        moveBasePickTo(c.getX(), c.getY());
+        Location base2 = basePickLocation().convertToUnits(LengthUnit.Millimeters);
+        Location loc = location.convertToUnits(LengthUnit.Millimeters);
+        tapeTarget = TapeTarget.Pocket;
+        pocketBias = new Location(LengthUnit.Millimeters, c.getX() - base2.getX(), c.getY() - base2.getY(), 0, 0);
+        pocketTaught = new Location(LengthUnit.Millimeters, c.getX(), c.getY(), 0, 0);
+        pocketExtra = new Location(LengthUnit.Millimeters, base2.getX() - loc.getX(), base2.getY() - loc.getY(), 0, 0);
+        pocketCameraZ = cam.getLocation().convertToUnits(LengthUnit.Millimeters).getZ();
+        pocketShiftX = 0;
+        pocketShiftY = 0;
+        res.ok = true;
+        res.message = a.alreadyInPlace
+                ? String.format("vision (part %.1f x %.1f mm): pocket already within %.2f mm of the window, nothing "
+                        + "changed", dims[0], dims[1], st.getPocketTolMm())
+                : String.format("vision (part %.1f x %.1f mm): tape jogged %d time(s), pocket centred, saved as zero",
+                        dims[0], dims[1], a.jogs);
+        return res;
+    }
+
+    /**
+     * Lower the nozzle on this feeder's pick spot with the vacuum on until the sensor shows a seal, and keep that
+     * height (plus the extra depth). Done once per feeder and session, at its first feed.
+     */
+    private void probePickZIfNeeded(Nozzle nozzle) throws Exception {
+        OrionSettings st = OrionManager.get().getSettings();
+        if (zCheckedThisSession || nozzle == null || !st.isZProbeEnabled()
+                || !Configuration.get().getMachine().isHomed()) {
+            return;
+        }
+        String name = st.getVacuumSenseActuator();
+        org.openpnp.spi.Actuator sense = name.isEmpty() ? null : nozzle.getHead().getActuatorByName(name);
+        if (sense == null && !name.isEmpty()) {
+            sense = Configuration.get().getMachine().getActuatorByName(name);
+        }
+        if (sense == null) {
+            zCheckedThisSession = true;
+            OrionManager.get().addLog(rail, org.openpnp.machine.orion.protocol.OrionBusListener.Direction.ERROR,
+                    getName() + ": pick height not probed, no vacuum sensor chosen (Bus Manager > Connection and "
+                            + "monitor > Pick height probe).");
+            return;
+        }
+        zCheckedThisSession = true;
+        final org.openpnp.spi.Actuator sensor = sense;
+        Location pick = getPickLocation().convertToUnits(LengthUnit.Millimeters);
+        double trimZ = nozzleTrim().getZ();
+        double saved = location.convertToUnits(LengthUnit.Millimeters).getZ();
+        org.openpnp.machine.orion.vision.OrionZProbe.Params p = new org.openpnp.machine.orion.vision.OrionZProbe.Params();
+        p.expectedZ = pick.getZ();
+        p.searchAboveMm = st.getZSearchAboveMm();
+        p.searchBelowMm = st.getZSearchBelowMm();
+        p.stepMm = st.getZStepMm();
+        p.extraMm = st.getZExtraMm();
+        p.sealedBelow = st.isVacuumSealedBelow();
+        p.threshold = st.getVacuumThreshold();
+        p.settleMs = st.getZSettleMs();
+        org.openpnp.spi.Actuator valve = nozzle instanceof org.openpnp.machine.reference.ReferenceNozzle
+                ? ((org.openpnp.machine.reference.ReferenceNozzle) nozzle).getVacuumActuator() : null;
+        org.openpnp.machine.orion.vision.OrionZProbe.Result r;
+        org.openpnp.util.MovableUtils.moveToLocationAtSafeZ(nozzle, new Location(LengthUnit.Millimeters, pick.getX(),
+                pick.getY(), pick.getZ() + p.searchAboveMm, pick.getRotation()));
+        try {
+            if (valve != null) {
+                valve.actuate(true);
+            }
+            r = org.openpnp.machine.orion.vision.OrionZProbe.probe(p,
+                    z -> nozzle.moveTo(new Location(LengthUnit.Millimeters, Double.NaN, Double.NaN, z, Double.NaN),
+                            st.getZSpeed()),
+                    () -> Double.parseDouble(sensor.read().trim().replace(',', '.')),
+                    ms -> {
+                        try {
+                            Thread.sleep(ms);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    });
+        } finally {
+            try {
+                if (valve != null) {
+                    valve.actuate(false);
+                }
+            } finally {
+                nozzle.moveToSafeZ();
+            }
+        }
+        if (!r.found) {
+            OrionManager.get().addLog(rail, org.openpnp.machine.orion.protocol.OrionBusListener.Direction.ERROR,
+                    getName() + ": pick height probe failed: " + r.problem + " Picking at the saved height "
+                            + String.format("%.2f", saved) + ".");
+            return;
+        }
+        double newZ = r.pickZ - trimZ;
+        location = location.convertToUnits(LengthUnit.Millimeters).derive(null, null, newZ, null);
+        pickZLearned = true;
+        OrionManager.get().addLog(rail, org.openpnp.machine.orion.protocol.OrionBusListener.Direction.INFO,
+                String.format("%s: pick height %.2f mm (sealed at %.2f, +%.2f deeper; was %.2f)", getName(), newZ,
+                        r.sealZ, st.getZExtraMm(), saved));
     }
 
     public double getTaughtSlotXMm() {

@@ -69,7 +69,13 @@ public final class OrionMenu {
             mgr.refresh();
         }));
         menu.add(scan);
-        JMenuItem verify = new JMenuItem("Verify all rails by vision");
+        JMenuItem cycle = new JMenuItem("Setup cycle: verify rails and set pick positions...");
+        cycle.setMnemonic(KeyEvent.VK_U);
+        cycle.setToolTipText("Moves the camera and the tapes. Per feeder: fiducial, fiber, pocket to the pick window. "
+                + "Machine must be homed.");
+        cycle.addActionListener(e -> OrionSetupUi.start(null, null));
+        menu.add(cycle);
+        JMenuItem verify = new JMenuItem("Verify all rails by vision (positions only)");
         verify.setMnemonic(KeyEvent.VK_V);
         verify.setToolTipText("Moves the camera. Machine must be homed.");
         verify.addActionListener(e -> OrionUi.run("Verify all rails",
