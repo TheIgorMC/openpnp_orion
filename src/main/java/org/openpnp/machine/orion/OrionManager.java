@@ -300,6 +300,9 @@ public class OrionManager {
                 for (int i = 0; i < 6; i++) {
                     sim.addFeeder(i % 2, i + 1);
                 }
+                org.openpnp.machine.orion.protocol.SimulatedConveyor belt = sim.addConveyor(
+                        Math.min(1, sim.getRailCount() - 1));
+                belt.instant = false;
                 t = sim;
                 break;
             case HOST_BOARD:

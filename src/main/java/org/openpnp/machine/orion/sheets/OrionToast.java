@@ -83,6 +83,17 @@ public final class OrionToast {
                 later.addActionListener(e -> close());
                 buttons.add(later);
             }
+            if (n.kind == Notice.Kind.BOARD_INSERTED) {
+                JButton load = new JButton("Load it");
+                load.addActionListener(e -> {
+                    close();
+                    OrionConveyorUi.loadBoard(null, null);
+                });
+                buttons.add(load);
+                JButton later = new JButton("Later");
+                later.addActionListener(e -> close());
+                buttons.add(later);
+            }
             if (n.kind == Notice.Kind.FOUND) {
                 JButton now = new JButton("Scan now");
                 now.addActionListener(e -> {
@@ -100,7 +111,7 @@ public final class OrionToast {
             body.add(buttons, BorderLayout.EAST);
             window.setContentPane(body);
             setText(n);
-            int ms = n.kind == Notice.Kind.FOUND || n.kind == Notice.Kind.SETUP_DUE ? 0 : n.kind == Notice.Kind.LOST || n.kind == Notice.Kind.ERROR ? 9000 : 6000;
+            int ms = n.kind == Notice.Kind.FOUND || n.kind == Notice.Kind.SETUP_DUE || n.kind == Notice.Kind.BOARD_INSERTED ? 0 : n.kind == Notice.Kind.LOST || n.kind == Notice.Kind.ERROR ? 9000 : 6000;
             life = new Timer(Math.max(1, ms), e -> close());
             life.setRepeats(false);
             if (ms > 0) {
@@ -111,6 +122,12 @@ public final class OrionToast {
                 if (notice.kind == Notice.Kind.FOUND
                         && OrionManager.get().getMonitor().getPending(notice.rail) == null) {
                     close();
+                }
+                if (notice.kind == Notice.Kind.BOARD_INSERTED) {
+                    org.openpnp.machine.orion.protocol.ConveyorStatus st = OrionManager.get().getConveyorStatus();
+                    if (st == null || st.boardLoaded() || !(st.insertedBoard() || st.boardWaiting())) {
+                        close();
+                    }
                 }
             });
             tick.start();
@@ -138,6 +155,8 @@ public final class OrionToast {
         switch (k) {
             case FOUND:
             case SETUP_DUE:
+            case BOARD_INSERTED:
+            case BOARD_WAITING:
                 return new Color(0x1A73E8);
             case ADDED:
             case BACK:

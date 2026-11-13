@@ -61,6 +61,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         progress.setVisible(false);
         feeders.add(progress, BorderLayout.SOUTH);
         main.addTab("Feeders", feeders);
+        main.addTab("Conveyor", new OrionConveyorPanel());
         main.addTab("Connection and monitor", new JScrollPane(top(buildConnectionPanel(), buildMonitorPanel(), buildSetupPanel())));
         main.addTab("Rail vision scan", visionHolder);
         main.addTab("Fiber / tape identification", top(buildIdentifyPanel()));
@@ -470,6 +471,10 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
                 v -> s.setMonitorIntervalS((int) v)));
         OrionUi.row(p, 2, "Scan the rail automatically after (s)", spinner(s.getAutoScanDelayS(), 5, 600, 5,
                 v -> s.setAutoScanDelayS((int) v)));
+        JCheckBox conv = new JCheckBox("Look for the board conveyor (fixed address 240) on rail", s.isConveyorEnabled());
+        conv.addActionListener(e -> s.setConveyorEnabled(conv.isSelected()));
+        OrionUi.row(p, 4, "", OrionUi.line(conv, spinner(s.getConveyorRail() + 1, 1, 8, 1,
+                v -> s.setConveyorRail((int) v - 1))));
         OrionUi.row(p, 3, "", new JLabel("<html><body style='width:520px'>A feeder that stops answering turns red "
                 + "after two missed pings. A newly plugged feeder is announced; if no other one is added for the "
                 + "time above, the rail is scanned and it gets its address. If nothing on a rail answers for "
