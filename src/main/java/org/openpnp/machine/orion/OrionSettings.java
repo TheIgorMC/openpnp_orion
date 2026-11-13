@@ -95,6 +95,32 @@ public class OrionSettings {
         autoScanDelayS = Math.max(5, v);
     }
 
+    // ---- conveyor
+
+    /** Look for the board conveyor at its fixed address when a rail is scanned. */
+    @Attribute(required = false)
+    private boolean conveyorEnabled = true;
+
+    /** 0-based rail the conveyor sits on (rail 2 = 1). */
+    @Attribute(required = false)
+    private int conveyorRail = 1;
+
+    public boolean isConveyorEnabled() {
+        return conveyorEnabled;
+    }
+
+    public void setConveyorEnabled(boolean v) {
+        conveyorEnabled = v;
+    }
+
+    public int getConveyorRail() {
+        return Math.max(0, conveyorRail);
+    }
+
+    public void setConveyorRail(int v) {
+        conveyorRail = Math.max(0, v);
+    }
+
     // ---- setup cycle (verify rails, bring every pocket to the pick window) and pick height probe
 
     /** Parts up to this size (the larger of the two sides against the larger limit) use camera + jog; bigger go semi blind. */

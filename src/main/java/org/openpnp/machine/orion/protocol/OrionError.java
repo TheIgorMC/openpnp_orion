@@ -11,6 +11,17 @@ public enum OrionError {
     NOT_READY(0x06, "not calibrated yet (pitch / zero / peel time)"),
     I2C(0x07, "EEPROM did not answer or write failed"),
     LOCKED(0x08, "factory serial present, refused"),
+    NO_BOARD(0x10, "no board at the sensor / stop / loaded"),
+    BOARD_PRESENT(0x11, "a board is in the way (sensor, clamp or loaded)"),
+    CLAMPED(0x12, "the clamp is engaged"),
+    BUSY(0x13, "another motion is running"),
+    TOO_LONG(0x14, "the board is longer than the sensor-to-pin distance"),
+    WIDTH_NOT_HOMED(0x15, "the width axis has no known position"),
+    SENSOR(0x16, "the entry sensor looks stuck or never changed"),
+    WIDTH_LIMIT(0x17, "width outside the allowed range"),
+    WATCHDOG(0x18, "the host went silent during a move"),
+    ENTRY_BLOCKED(0x19, "a board waiting at the entry blocks this"),
+    NEXT_OVERRUN(0x1A, "the waiting board would be pushed past the stop"),
     UNKNOWN(0xFF, "unknown error");
 
     public final int code;

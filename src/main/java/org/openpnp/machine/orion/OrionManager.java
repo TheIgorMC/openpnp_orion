@@ -64,7 +64,7 @@ public class OrionManager {
 
     /** A short message for the user ("found a new feeder", "feeder lost", "bus was reset"). */
     public static class Notice {
-        public enum Kind { FOUND, ADDED, LOST, BACK, RESET, ERROR, SETUP_DUE }
+        public enum Kind { FOUND, ADDED, LOST, BACK, RESET, ERROR, SETUP_DUE, BOARD_INSERTED, BOARD_WAITING }
 
         public final long time = System.currentTimeMillis();
         public final Kind kind;
@@ -254,6 +254,28 @@ public class OrionManager {
         return isConnected() ? buses.size() : 0;
     }
 
+    /** The board conveyor if one answered on its rail, else null. */
+    public org.openpnp.machine.orion.protocol.OrionConveyor getConveyor() {
+        for (OrionBus b : getBuses()) {
+            org.openpnp.machine.orion.protocol.OrionConveyor c = b.getConveyor();
+            if (c != null) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    private volatile org.openpnp.machine.orion.protocol.ConveyorStatus conveyorStatus;
+
+    /** Last status the monitor or the Conveyor tab read, or null. */
+    public org.openpnp.machine.orion.protocol.ConveyorStatus getConveyorStatus() {
+        return conveyorStatus;
+    }
+
+    public void setConveyorStatus(org.openpnp.machine.orion.protocol.ConveyorStatus s) {
+        conveyorStatus = s;
+    }
+
     public synchronized OrionBus getBus(int rail) {
         return rail >= 0 && rail < buses.size() ? buses.get(rail) : null;
     }
@@ -303,6 +325,8 @@ public class OrionManager {
             OrionBus b = new OrionBus(t, r);
             b.setMaxAddress(s.getMaxAddress());
             b.setRetries(s.getRetries());
+            b.setConveyorAddress(s.isConveyorEnabled() && r == s.getConveyorRail()
+                    ? org.openpnp.machine.orion.protocol.OrionCommand.ADDR_CONVEYOR : 0);
             b.addListener(busListener);
             buses.add(b);
         }
@@ -531,7 +555,7 @@ public class OrionManager {
 
     private static String signature(OrionBus bus) {
         List<String> l = new ArrayList<>();
-        for (OrionDeviceInfo d : bus.getDevices()) {
+        for (OrionDeviceInfo d : bus.getFeeders()) {
             if (d.state != OrionDeviceInfo.State.LOST) {
                 l.add(d.serial + "|" + d.slotXMm);
             }
@@ -732,7 +756,7 @@ public class OrionManager {
             }
         }
         List<OrionDeviceInfo> units = new ArrayList<>();
-        for (OrionDeviceInfo d : bus.getDevices()) {
+        for (OrionDeviceInfo d : bus.getFeeders()) {
             if (d.state != OrionDeviceInfo.State.LOST && d.serial != null
                     && !d.serial.startsWith("NONCE-") && !bound.contains(d.serial.toUpperCase())) {
                 units.add(d);
@@ -773,7 +797,7 @@ public class OrionManager {
         int created = 0;
         for (OrionBus b : getBuses()) {
             b.scan(null);
-            for (OrionDeviceInfo d : b.getDevices()) {
+            for (OrionDeviceInfo d : b.getFeeders()) {
                 if (d.state != OrionDeviceInfo.State.LOST) {
                     units++;
                 }

@@ -13,6 +13,10 @@ public class OrionDeviceInfo {
         NO_SERIAL
     }
 
+    /** What kind of unit this is: a feeder (assigned address) or the conveyor (fixed address 240). */
+    public enum Kind { FEEDER, CONVEYOR }
+
+    public Kind kind = Kind.FEEDER;
     public int rail;
     public int address;
     /** 32 hex chars, or "NONCE-xxxx" if the unit has no serial. */
@@ -33,6 +37,7 @@ public class OrionDeviceInfo {
 
     public OrionDeviceInfo copy() {
         OrionDeviceInfo c = new OrionDeviceInfo();
+        c.kind = kind;
         c.rail = rail;
         c.address = address;
         c.serial = serial;

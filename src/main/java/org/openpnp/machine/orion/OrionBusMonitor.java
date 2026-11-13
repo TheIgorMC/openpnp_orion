@@ -213,15 +213,18 @@ public class OrionBusMonitor {
                     if (now == null) {
                         continue;
                     }
-                    if (now.missedPings == 0) {
-                        answered++;
-                    } else {
-                        missed++;
+                    if (now.kind == OrionDeviceInfo.Kind.FEEDER) {
+                        if (now.missedPings == 0) {
+                            answered++;
+                        } else {
+                            missed++;
+                        }
                     }
                     if (changed) {
                         anyChange = true;
                         if (now.state == OrionDeviceInfo.State.LOST) {
-                            mgr.notice(new Notice(Notice.Kind.LOST, rail, "Feeder " + describe(now)
+                            mgr.notice(new Notice(Notice.Kind.LOST, rail, (now.kind == OrionDeviceInfo.Kind.CONVEYOR
+                                    ? "Conveyor" : "Feeder") + " " + describe(now)
                                     + " stopped answering (unplugged?)"));
                         } else if (before == OrionDeviceInfo.State.LOST) {
                             mgr.notice(new Notice(Notice.Kind.BACK, rail, "Feeder " + describe(now)
@@ -241,6 +244,7 @@ public class OrionBusMonitor {
                 if (stop || jobOrTaskActive()) {
                     return;
                 }
+                anyChange |= watchConveyor(bus);
                 anyChange |= watchForNewFeeders(bus, s);
             } catch (OrionException e) {
                 if (e.kind == OrionException.Kind.TRANSPORT) {
@@ -285,7 +289,7 @@ public class OrionBusMonitor {
     private static int countOnline(List<OrionBus> buses) {
         int n = 0;
         for (OrionBus b : buses) {
-            for (OrionDeviceInfo d : b.getDevices()) {
+            for (OrionDeviceInfo d : b.getFeeders()) {
                 if (d.state != OrionDeviceInfo.State.LOST) {
                     n++;
                 }
@@ -295,8 +299,47 @@ public class OrionBusMonitor {
     }
 
     static String describe(OrionDeviceInfo d) {
+        if (d.kind == OrionDeviceInfo.Kind.CONVEYOR) {
+            return "(rail " + (d.rail + 1) + ")";
+        }
         String comp = d.componentId == 0xFFFF ? "no part" : "part " + d.componentId;
         return "#" + d.address + " (" + comp + ", rail " + (d.rail + 1) + ")";
+    }
+
+    // ------------------------------------------------------------------ conveyor
+
+    private boolean prevLoadable;
+    private boolean prevWaitingBehind;
+
+    /** Read the conveyor's status and tell the user about a board that was just inserted. */
+    private boolean watchConveyor(OrionBus bus) throws OrionException {
+        OrionDeviceInfo d = bus.getDevice(org.openpnp.machine.orion.protocol.OrionCommand.ADDR_CONVEYOR);
+        if (d == null || d.kind != OrionDeviceInfo.Kind.CONVEYOR || d.state == OrionDeviceInfo.State.LOST) {
+            mgr.setConveyorStatus(null);
+            prevLoadable = false;
+            prevWaitingBehind = false;
+            return false;
+        }
+        org.openpnp.machine.orion.protocol.ConveyorStatus st = bus.pollConveyorStatus();
+        org.openpnp.machine.orion.protocol.ConveyorStatus old = mgr.getConveyorStatus();
+        mgr.setConveyorStatus(st);
+        if (st == null) {
+            return false;
+        }
+        boolean loadable = !st.boardLoaded() && !st.busy() && (st.insertedBoard() || st.boardWaiting());
+        if (loadable && !prevLoadable) {
+            mgr.notice(new Notice(Notice.Kind.BOARD_INSERTED, bus.getRail(), st.boardWaiting()
+                    ? "The next board is ready on the conveyor. Load it?"
+                    : "A board was inserted at the conveyor entry. Load it?"));
+        }
+        boolean behind = st.boardLoaded() && st.boardWaiting();
+        if (behind && !prevWaitingBehind) {
+            mgr.notice(new Notice(Notice.Kind.BOARD_WAITING, bus.getRail(),
+                    "A board is waiting at the conveyor entry (next board)."));
+        }
+        prevLoadable = loadable;
+        prevWaitingBehind = behind;
+        return old == null || old.flags != st.flags || old.state != st.state;
     }
 
     // ------------------------------------------------------------------ new feeders
@@ -307,7 +350,7 @@ public class OrionBusMonitor {
         int unassigned = bus.peekUnassigned();
         long now = System.currentTimeMillis();
         int lost = 0;
-        for (OrionDeviceInfo d : bus.getDevices()) {
+        for (OrionDeviceInfo d : bus.getFeeders()) {
             if (d.state == OrionDeviceInfo.State.LOST) {
                 lost++;
             }

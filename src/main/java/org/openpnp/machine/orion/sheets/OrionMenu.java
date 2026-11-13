@@ -131,7 +131,7 @@ public final class OrionMenu {
                 int total = 0;
                 int online = 0;
                 for (OrionBus b : mgr.getBuses()) {
-                    for (OrionDeviceInfo d : b.getDevices()) {
+                    for (OrionDeviceInfo d : b.getFeeders()) {
                         total++;
                         if (d.state == OrionDeviceInfo.State.ONLINE) {
                             online++;

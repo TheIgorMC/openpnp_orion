@@ -27,6 +27,10 @@ public class OrionBus {
     private final List<OrionBusListener> listeners = new CopyOnWriteArrayList<>();
     private final Map<Integer, OrionDeviceInfo> devices = new TreeMap<>();
 
+    /** Fixed address of the conveyor on this rail, 0 = none expected here. */
+    private int conveyorAddress;
+    private OrionConveyor conveyor;
+
     private boolean quiet;
     /** Suppress all traffic logging (monitor pings every few seconds would drown the log). */
     private boolean silent;
@@ -51,7 +55,8 @@ public class OrionBus {
     }
 
     public void setMaxAddress(int maxAddress) {
-        this.maxAddress = Math.max(1, Math.min(OrionCommand.ADDR_MAX, maxAddress));
+        // 240..247 belong to fixed-address devices, never to a feeder
+        this.maxAddress = Math.max(1, Math.min(OrionCommand.ADDR_FIXED_FIRST - 1, maxAddress));
     }
 
     public int getMaxAddress() {
@@ -198,6 +203,91 @@ public class OrionBus {
         return out;
     }
 
+    /** Only the feeders (not the conveyor). */
+    public synchronized List<OrionDeviceInfo> getFeeders() {
+        List<OrionDeviceInfo> out = new ArrayList<>();
+        for (OrionDeviceInfo d : devices.values()) {
+            if (d.kind == OrionDeviceInfo.Kind.FEEDER) {
+                out.add(d.copy());
+            }
+        }
+        return out;
+    }
+
+    /** Look for the conveyor at its fixed address when scanning this rail. 0 = do not look. */
+    public synchronized void setConveyorAddress(int address) {
+        conveyorAddress = address;
+        conveyor = null;
+    }
+
+    /** The conveyor on this rail if it answered, else null. */
+    public synchronized OrionConveyor getConveyor() {
+        OrionDeviceInfo d = conveyorAddress == 0 ? null : devices.get(conveyorAddress);
+        if (d == null || d.kind != OrionDeviceInfo.Kind.CONVEYOR) {
+            return null;
+        }
+        if (conveyor == null) {
+            conveyor = new OrionConveyor(this, conveyorAddress);
+            try {
+                conveyor.getInfo();
+            } catch (OrionException e) {
+                // capabilities stay unknown until the next successful call
+            }
+        }
+        return conveyor;
+    }
+
+    /** One silent status read of the conveyor, or null when there is none on this rail. */
+    public synchronized ConveyorStatus pollConveyorStatus() throws OrionException {
+        OrionConveyor c = getConveyor();
+        if (c == null) {
+            return null;
+        }
+        boolean was = silent;
+        silent = true;
+        try {
+            return c.getStatus();
+        } finally {
+            silent = was;
+        }
+    }
+
+    /** Ask the fixed address; a conveyor that answers is entered in the device table. */
+    private void probeConveyor() {
+        if (conveyorAddress == 0) {
+            return;
+        }
+        try {
+            OrionFrame r = request(conveyorAddress, OrionCommand.C_GET_INFO, new byte[0], DEFAULT_TIMEOUT_MS, 1, false);
+            if (r.command == OrionCommand.C_INFO && r.u8(0) == 0x02) {
+                OrionDeviceInfo d = devices.get(conveyorAddress);
+                boolean isNew = d == null || d.kind != OrionDeviceInfo.Kind.CONVEYOR;
+                if (isNew) {
+                    d = new OrionDeviceInfo();
+                    d.kind = OrionDeviceInfo.Kind.CONVEYOR;
+                    d.rail = rail;
+                    d.address = conveyorAddress;
+                    d.serial = "CONVEYOR-" + conveyorAddress;
+                    d.componentId = 0xFFFF;
+                    d.tapeWidthMm = 0xFF;
+                    devices.put(conveyorAddress, d);
+                    conveyor = null;
+                    log(OrionBusListener.Direction.INFO, "Conveyor found at address " + conveyorAddress);
+                }
+                d.state = OrionDeviceInfo.State.ONLINE;
+                d.note = "";
+                d.lastSeenMs = System.currentTimeMillis();
+                d.missedPings = 0;
+            }
+        } catch (OrionException e) {
+            OrionDeviceInfo d = devices.get(conveyorAddress);
+            if (d != null && d.kind == OrionDeviceInfo.Kind.CONVEYOR && d.state != OrionDeviceInfo.State.LOST) {
+                d.state = OrionDeviceInfo.State.LOST;
+                d.note = "no reply";
+            }
+        }
+    }
+
     public synchronized OrionDeviceInfo getDevice(int address) {
         OrionDeviceInfo d = devices.get(address);
         return d == null ? null : d.copy();
@@ -299,10 +389,11 @@ public class OrionBus {
         }
         // Anything we knew about that did not answer is now lost.
         for (OrionDeviceInfo d : new ArrayList<>(devices.values())) {
-            if (!seen.contains(d.address)) {
+            if (d.kind == OrionDeviceInfo.Kind.FEEDER && !seen.contains(d.address)) {
                 markLost(d.address);
             }
         }
+        probeConveyor();
         if (progress != null) {
             progress.update("Looking for new feeders", 0, 1);
         }

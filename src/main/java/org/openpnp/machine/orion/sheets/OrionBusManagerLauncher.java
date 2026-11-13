@@ -75,7 +75,7 @@ public class OrionBusManagerLauncher extends JPanel implements OrionManager.List
         int online = 0;
         railBox.removeAll();
         for (OrionBus b : mgr.getBuses()) {
-            List<OrionDeviceInfo> devs = b.getDevices();
+            List<OrionDeviceInfo> devs = b.getFeeders();
             JPanel line = new JPanel(new BorderLayout(8, 0));
             line.setAlignmentX(Component.LEFT_ALIGNMENT);
             JLabel name = new JLabel("Rail " + (b.getRail() + 1));

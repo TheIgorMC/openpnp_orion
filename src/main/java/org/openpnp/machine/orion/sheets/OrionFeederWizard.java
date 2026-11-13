@@ -411,7 +411,7 @@ public class OrionFeederWizard extends AbstractConfigurationWizard implements Or
         }
         List<OrionDeviceInfo> free = new ArrayList<>();
         for (OrionBus b : mgr.getBuses()) {
-            for (OrionDeviceInfo d : b.getDevices()) {
+            for (OrionDeviceInfo d : b.getFeeders()) {
                 if (d.state != OrionDeviceInfo.State.LOST && boundFeeder(d.serial) == null) {
                     free.add(d);
                 }

@@ -48,6 +48,32 @@ public final class OrionCommand {
     public static final int PEEL_RATE_INFO = 0xA6;
     public static final int POSITION_INFO = 0xA7;
 
+    // ---- conveyor (fixed address, see Conveyor/PROTOCOL.md)
+    public static final int C_GET_INFO = 0x50;
+    public static final int C_GET_STATUS = 0x51;
+    public static final int C_STOP = 0x52;
+    public static final int C_IDENTIFY = 0x53;
+    public static final int C_SET_CFG = 0x54;
+    public static final int C_GET_CFG = 0x55;
+    public static final int C_MOVE = 0x58;
+    public static final int C_LOAD = 0x59;
+    public static final int C_MEASURE = 0x5A;
+    public static final int C_GOTO_STOP = 0x5B;
+    public static final int C_UNLOAD = 0x5C;
+    public static final int C_CLEAR = 0x5D;
+    public static final int C_SET_WIDTH = 0x60;
+    public static final int C_HOME_WIDTH = 0x61;
+    public static final int C_DEFINE_WIDTH = 0x62;
+    public static final int C_CLAMP = 0x64;
+    public static final int C_STOPPER = 0x66;
+    public static final int C_INFO = 0xC0;
+    public static final int C_STATUS = 0xC1;
+    public static final int C_CFG = 0xC2;
+
+    /** The conveyor's fixed bus address; 240..247 are reserved for fixed-address devices. */
+    public static final int ADDR_CONVEYOR = 240;
+    public static final int ADDR_FIXED_FIRST = 240;
+
     public static final int ADDR_BROADCAST = 0;
     public static final int ADDR_MAX = 247;
 
@@ -95,6 +121,26 @@ public final class OrionCommand {
             case I2C_SCAN_INFO: return "I2C_SCAN_INFO";
             case PEEL_RATE_INFO: return "PEEL_RATE_INFO";
             case POSITION_INFO: return "POSITION_INFO";
+            case C_GET_INFO: return "C_GET_INFO";
+            case C_GET_STATUS: return "C_GET_STATUS";
+            case C_STOP: return "C_STOP";
+            case C_IDENTIFY: return "C_IDENTIFY";
+            case C_SET_CFG: return "C_SET_CFG";
+            case C_GET_CFG: return "C_GET_CFG";
+            case C_MOVE: return "C_MOVE";
+            case C_LOAD: return "C_LOAD";
+            case C_MEASURE: return "C_MEASURE";
+            case C_GOTO_STOP: return "C_GOTO_STOP";
+            case C_UNLOAD: return "C_UNLOAD";
+            case C_CLEAR: return "C_CLEAR";
+            case C_SET_WIDTH: return "C_SET_WIDTH";
+            case C_HOME_WIDTH: return "C_HOME_WIDTH";
+            case C_DEFINE_WIDTH: return "C_DEFINE_WIDTH";
+            case C_CLAMP: return "C_CLAMP";
+            case C_STOPPER: return "C_STOPPER";
+            case C_INFO: return "C_INFO";
+            case C_STATUS: return "C_STATUS";
+            case C_CFG: return "C_CFG";
             default: return String.format("0x%02X", cmd);
         }
     }

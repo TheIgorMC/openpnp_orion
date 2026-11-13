@@ -113,6 +113,16 @@ public final class OrionFrame {
         return ((payload[i] & 0xFF) << 8) | (payload[i + 1] & 0xFF);
     }
 
+    /** Unsigned 32 bit big endian. */
+    public long u32(int i) {
+        return ((long) u16(i) << 16) | u16(i + 2);
+    }
+
+    /** Signed 32 bit big endian. */
+    public int s32(int i) {
+        return (int) u32(i);
+    }
+
     public boolean isAck() {
         return command == OrionCommand.ACK;
     }

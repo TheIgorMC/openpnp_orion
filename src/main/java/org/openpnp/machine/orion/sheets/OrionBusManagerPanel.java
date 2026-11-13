@@ -436,7 +436,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         int total = 0;
         int online = 0;
         for (OrionBus b : mgr.getBuses()) {
-            for (OrionDeviceInfo d : b.getDevices()) {
+            for (OrionDeviceInfo d : b.getFeeders()) {
                 total++;
                 if (d.state == OrionDeviceInfo.State.ONLINE) {
                     online++;
@@ -1165,7 +1165,7 @@ public class OrionBusManagerPanel extends JPanel implements OrionManager.Listene
         void refresh() {
             OrionBus bus = mgr.getBus(rail);
             rows.clear();
-            List<OrionDeviceInfo> devs = bus == null ? new ArrayList<>() : bus.getDevices();
+            List<OrionDeviceInfo> devs = bus == null ? new ArrayList<>() : bus.getFeeders();
             List<OrionFeeder> feeders = new ArrayList<>();
             for (Feeder f : Configuration.get().getMachine().getFeeders()) {
                 if (f instanceof OrionFeeder && ((OrionFeeder) f).getSerial() != null) {

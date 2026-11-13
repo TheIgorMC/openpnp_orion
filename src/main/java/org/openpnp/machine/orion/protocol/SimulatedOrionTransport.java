@@ -42,6 +42,7 @@ public class SimulatedOrionTransport implements OrionTransport {
 
     private final int rails;
     private final List<SimFeeder> feeders = new ArrayList<>();
+    private final List<SimulatedConveyor> conveyors = new ArrayList<>();
     private final boolean[] power;
     private final Random rnd = new Random(1);
     private boolean open;
@@ -61,6 +62,16 @@ public class SimulatedOrionTransport implements OrionTransport {
         SimFeeder f = new SimFeeder(rail, s, 0x1000 + feeders.size() * 17);
         feeders.add(f);
         return f;
+    }
+
+    public SimulatedConveyor addConveyor(int rail) {
+        SimulatedConveyor c = new SimulatedConveyor(rail);
+        conveyors.add(c);
+        return c;
+    }
+
+    public List<SimulatedConveyor> getConveyors() {
+        return conveyors;
     }
 
     public List<SimFeeder> getFeeders() {
@@ -113,6 +124,15 @@ public class SimulatedOrionTransport implements OrionTransport {
         List<OrionFrame> out = new ArrayList<>();
         if (!power[rail]) {
             return out;
+        }
+        for (SimulatedConveyor c : conveyors) {
+            if (c.rail == rail && req.address == c.address) {
+                OrionFrame r = c.handle(req);
+                if (r != null) {
+                    out.add(r);
+                }
+                return out;
+            }
         }
         List<SimFeeder> targets = new ArrayList<>();
         for (SimFeeder f : feeders) {
