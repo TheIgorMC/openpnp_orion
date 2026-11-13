@@ -105,6 +105,77 @@ public class OrionSettings {
     @Attribute(required = false)
     private int conveyorRail = 1;
 
+    /** Compare the measured board length and the set width with the board the job expects. */
+    @Attribute(required = false)
+    private boolean boardSizeCheck = true;
+
+    /** Expected board sides, mm; 0 = take the size from the job's board / panel. */
+    @Attribute(required = false)
+    private double expectedBoardA = 0;
+
+    @Attribute(required = false)
+    private double expectedBoardB = 0;
+
+    /** How far the measured length and the set width may differ from the expected ones. */
+    @Attribute(required = false)
+    private double boardSizeTolMm = 2.0;
+
+    /** The width is set this much wider than the board so it slides without binding. */
+    @Attribute(required = false)
+    private double widthClearanceMm = 0.5;
+
+    /** Strip along each board edge covered by the guides and the clamp: no component may sit in it. */
+    @Attribute(required = false)
+    private double boardEdgeMm = 3.0;
+
+    public boolean isBoardSizeCheck() {
+        return boardSizeCheck;
+    }
+
+    public void setBoardSizeCheck(boolean v) {
+        boardSizeCheck = v;
+    }
+
+    public double getExpectedBoardA() {
+        return expectedBoardA;
+    }
+
+    public void setExpectedBoardA(double v) {
+        expectedBoardA = Math.max(0, v);
+    }
+
+    public double getExpectedBoardB() {
+        return expectedBoardB;
+    }
+
+    public void setExpectedBoardB(double v) {
+        expectedBoardB = Math.max(0, v);
+    }
+
+    public double getBoardSizeTolMm() {
+        return Math.max(0.1, boardSizeTolMm);
+    }
+
+    public void setBoardSizeTolMm(double v) {
+        boardSizeTolMm = v;
+    }
+
+    public double getWidthClearanceMm() {
+        return Math.max(0, widthClearanceMm);
+    }
+
+    public void setWidthClearanceMm(double v) {
+        widthClearanceMm = v;
+    }
+
+    public double getBoardEdgeMm() {
+        return Math.max(0, boardEdgeMm);
+    }
+
+    public void setBoardEdgeMm(double v) {
+        boardEdgeMm = v;
+    }
+
     public boolean isConveyorEnabled() {
         return conveyorEnabled;
     }

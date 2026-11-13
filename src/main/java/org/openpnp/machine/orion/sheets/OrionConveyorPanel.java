@@ -71,7 +71,7 @@ public class OrionConveyorPanel extends JPanel implements OrionManager.Listener 
         JPanel center = new JPanel(new BorderLayout());
         center.add(banners, BorderLayout.NORTH);
         center.add(view, BorderLayout.CENTER);
-        details.setPreferredSize(new java.awt.Dimension(300, 100));
+        details.setPreferredSize(new java.awt.Dimension(400, 100));
         body.add(center, BorderLayout.CENTER);
         body.add(details, BorderLayout.EAST);
         buildControls();
@@ -267,6 +267,14 @@ public class OrionConveyorPanel extends JPanel implements OrionManager.Listener 
                     opts, opts[1]);
             if (a == 0) {
                 final int w = (int) Math.round(((Number) widthSpinner.getValue()).doubleValue() * 10);
+                if (!home) {
+                    String warn2 = OrionConveyorUi.sizeWarning(last, (double) w);
+                    if (warn2 != null && JOptionPane.showConfirmDialog(MainFrame.get(), warn2 + "\n\nSet this width "
+                            + "anyway?", "Width does not fit the board", JOptionPane.YES_NO_OPTION,
+                            JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+                        return;
+                    }
+                }
                 act(home ? "home width" : "set width", c -> {
                     if (home) {
                         c.homeWidth(true);
@@ -400,12 +408,96 @@ public class OrionConveyorPanel extends JPanel implements OrionManager.Listener 
                 banner("The <b>width</b> is the last saved value (" + String.format("%.1f", s.widthMm())
                         + " mm), not confirmed since power-up.", "Clear window...");
             }
+            String size = OrionConveyorUi.sizeWarning(s, null);
+            if (size != null) {
+                banner("<b>Check the board.</b> " + size.replace("<", "&lt;"));
+            }
             if (s.driverFault()) {
                 banner("<b>Motor driver fault</b> reported by the conveyor.");
             }
         }
         banners.revalidate();
         banners.repaint();
+    }
+
+    /** Expected board size, tolerance, guide clearance and the edge strip. */
+    private JPanel sizePanel() {
+        org.openpnp.machine.orion.OrionSettings st = mgr.getSettings();
+        JPanel p = new JPanel(new java.awt.GridBagLayout());
+        p.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createTitledBorder("Board size check"),
+                BorderFactory.createEmptyBorder(0, 4, 4, 4)));
+        javax.swing.JCheckBox on = new javax.swing.JCheckBox("Warn when the board does not fit", st.isBoardSizeCheck());
+        on.addActionListener(e -> {
+            st.setBoardSizeCheck(on.isSelected());
+            refresh(last);
+        });
+        java.awt.GridBagConstraints c = new java.awt.GridBagConstraints();
+        c.gridx = 0;
+        c.gridy = 0;
+        c.gridwidth = 2;
+        c.anchor = java.awt.GridBagConstraints.WEST;
+        p.add(on, c);
+        int r = 1;
+        r = sizeRow(p, r, "Sides A / B (mm)", sp(st.getExpectedBoardA(), 0, 1000, 1, v -> {
+            st.setExpectedBoardA(v);
+            refresh(last);
+        }), sp(st.getExpectedBoardB(), 0, 1000, 1, v -> {
+            st.setExpectedBoardB(v);
+            refresh(last);
+        }));
+        OrionConveyorUi.Expected ex = OrionConveyorUi.expected();
+        JLabel src = new JLabel(ex == null ? "from the job (none open)" : String.format("%.1f x %.1f mm, %s", ex.a,
+                ex.b, ex.source));
+        src.setForeground(UIManager.getColor("Label.disabledForeground"));
+        r = sizeRow(p, r, "Expected", src, null);
+        r = sizeRow(p, r, "Tolerance / clearance", sp(st.getBoardSizeTolMm(), 0.1, 50, 0.5, v -> {
+            st.setBoardSizeTolMm(v);
+            refresh(last);
+        }), sp(st.getWidthClearanceMm(), 0, 10, 0.1, v -> {
+            st.setWidthClearanceMm(v);
+            refresh(last);
+        }));
+        r = sizeRow(p, r, "Edge strip (mm)", sp(st.getBoardEdgeMm(), 0, 30, 0.5, v -> {
+            st.setBoardEdgeMm(v);
+            refresh(last);
+        }), null);
+        if (ex != null && st.getBoardEdgeMm() > 0) {
+            JLabel u = new JLabel(String.format("usable %.1f x %.1f mm", Math.max(0, ex.a - 2 * st.getBoardEdgeMm()),
+                    Math.max(0, ex.b - 2 * st.getBoardEdgeMm())));
+            u.setForeground(UIManager.getColor("Label.disabledForeground"));
+            r = sizeRow(p, r, "", u, null);
+        }
+        return p;
+    }
+
+    private JSpinner sp(double v, double min, double max, double step, java.util.function.DoubleConsumer set) {
+        JSpinner s = new JSpinner(new SpinnerNumberModel(v, min, max, step));
+        s.setPreferredSize(new java.awt.Dimension(70, s.getPreferredSize().height));
+        s.addChangeListener(e -> set.accept(((Number) s.getValue()).doubleValue()));
+        return s;
+    }
+
+    private int sizeRow(JPanel p, int row, String label, Component a, Component b) {
+        java.awt.GridBagConstraints c = new java.awt.GridBagConstraints();
+        c.gridx = 0;
+        c.gridy = row;
+        c.anchor = java.awt.GridBagConstraints.WEST;
+        c.insets = new java.awt.Insets(1, 0, 1, 8);
+        JLabel l = new JLabel(label);
+        l.setForeground(UIManager.getColor("Label.disabledForeground"));
+        l.setMinimumSize(l.getPreferredSize());
+        p.add(l, c);
+        JPanel cell = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        cell.add(a);
+        if (b != null) {
+            cell.add(b);
+        }
+        c = new java.awt.GridBagConstraints();
+        c.gridx = 1;
+        c.gridy = row;
+        c.anchor = java.awt.GridBagConstraints.WEST;
+        p.add(cell, c);
+        return row + 1;
     }
 
     private void kv(JPanel g, int row, String k, String v) {
@@ -454,6 +546,7 @@ public class OrionConveyorPanel extends JPanel implements OrionManager.Listener 
                 ? Color.LIGHT_GRAY : UIManager.getColor("Component.borderColor")));
         wrap.add(g, BorderLayout.NORTH);
         details.add(wrap, BorderLayout.CENTER);
+        details.add(sizePanel(), BorderLayout.SOUTH);
         details.revalidate();
         details.repaint();
     }

@@ -110,7 +110,7 @@ public class OrionManager {
         noticeListeners.remove(l);
     }
 
-    void notice(Notice n) {
+    public void notice(Notice n) {
         addLog(Math.max(0, n.rail), n.kind == Notice.Kind.ERROR ? OrionBusListener.Direction.ERROR
                 : OrionBusListener.Direction.INFO, n.text);
         javax.swing.SwingUtilities.invokeLater(() -> {
